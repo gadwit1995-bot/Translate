@@ -1,0 +1,2813 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>VocabPen Studio V4.4</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <!-- Dexie.js (IndexedDB) -->
+    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
+    <!-- Tesseract.js (OCR เฉพาะเมื่อกดปุ่มสแกนเท่านั้น) -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        html, body {
+            font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+            overscroll-behavior: none;
+            touch-action: pan-x pan-y;
+        }
+        #pdf-scroll-container {
+            touch-action: pan-x pan-y;
+            -webkit-overflow-scrolling: touch;
+        }
+        #pdf-wrapper {
+            position: relative;
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.18);
+            margin: 0 auto;
+            background: white;
+            transform-origin: 0 0;
+        }
+        #draw-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 25;
+            touch-action: none;
+        }
+        #word-hit-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 15;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .word-hitbox {
+            position: absolute;
+            color: transparent;
+            pointer-events: none;
+            border-radius: 3px;
+        }
+        .perspective { perspective: 1000px; }
+        .transform-style-3d { transform-style: preserve-3d; transition: transform 0.45s; }
+        .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+        .rotate-y-180 { transform: rotateY(180deg); }
+
+        @media print {
+            body * { visibility: hidden; }
+            #print-area, #print-area * { visibility: visible; }
+            #print-area {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                background: white;
+                padding: 0;
+            }
+            .no-print { display: none !important; }
+        }
+    
+        /* ===== V4.4 skin: ธีมใหม่ + แถบเครื่องมือลอย ===== */
+        body{background:linear-gradient(180deg,#f8fafc,#eef2f9)}
+        header{background:rgba(255,255,255,.88)!important;backdrop-filter:blur(12px);box-shadow:0 1px 0 #e2e8f0,0 8px 24px -16px rgba(15,23,42,.25)}
+        header>div:first-child>div:first-child{background:linear-gradient(135deg,#4f46e5,#7c3aed)!important;box-shadow:0 6px 14px -6px rgba(79,70,229,.6)}
+        #view-reader{position:relative}
+        #view-reader>div:first-child{background:#fff!important;border-bottom:1px solid #e8ecf4}
+        #pdf-scroll-container{background:radial-gradient(circle at 50% 0,#e9edf7,#dfe5f1)!important}
+        #pdf-wrapper{border-radius:4px;box-shadow:0 18px 40px -16px rgba(15,23,42,.45)!important}
+        #pdf-empty-state,.bg-white.rounded-2xl{box-shadow:0 10px 30px -18px rgba(15,23,42,.35)!important;border-color:#e8ecf4!important}
+        button{transition:transform .08s,background .15s,box-shadow .15s}button:active{transform:scale(.97)}
+        #vocab-popup{border-radius:18px!important;box-shadow:0 22px 50px -14px rgba(15,23,42,.45)!important}
+        #tool-dock{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:4px;padding:6px;background:rgba(255,255,255,.93);backdrop-filter:blur(14px);border:1px solid #e2e8f0;border-radius:20px;box-shadow:0 14px 34px -10px rgba(15,23,42,.38)}
+        #tool-dock button{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:58px;padding:6px 8px;border-radius:14px;font-size:19px;line-height:1.1;color:#475569;touch-action:manipulation}
+        #tool-dock button span{font-size:10px;font-weight:700}
+        #tool-dock button.on{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff}
+        #tool-dock i{width:1px;height:30px;background:#e2e8f0;margin:0 2px}
+        #tool-dock .dot{min-width:0;width:28px;height:28px;padding:0;border-radius:50%;background:var(--c);border:2px solid #fff;box-shadow:0 0 0 1px #cbd5e1}
+        #tool-dock .dot.on{background:var(--c);box-shadow:0 0 0 3px #4f46e5}
+        #ink-colors{display:flex;gap:8px;padding:0 6px}
+        #sentence-sheet{position:absolute;left:12px;right:12px;bottom:92px;max-width:760px;margin:0 auto;z-index:41;background:#fff;border:1px solid #e2e8f0;border-radius:20px;box-shadow:0 22px 50px -14px rgba(15,23,42,.5);padding:14px 16px}
+        #sentence-sheet .ss-en{font-size:13px;color:#475569;max-height:84px;overflow:auto;font-style:italic;margin:6px 0}
+        #sentence-sheet .ss-th{font-size:17px;font-weight:700;color:#1e1b4b;max-height:170px;overflow:auto;line-height:1.55}
+        #sentence-sheet .ss-bar{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:#94a3b8}
+        #sentence-sheet .ss-bar button{padding:4px 10px;border-radius:10px;background:#eef2ff;color:#4338ca;font-weight:700;font-size:13px}
+    </style>
+</head>
+<body class="bg-slate-100 h-screen flex flex-col overflow-hidden text-slate-800">
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-white border-b border-slate-200 px-3 sm:px-4 py-2.5 flex justify-between items-center z-30 shrink-0 no-print">
+        <div class="flex items-center gap-2 sm:gap-3">
+            <div class="bg-indigo-600 text-white p-2 rounded-xl font-bold text-base leading-none flex items-center gap-1.5">
+                <span>✏️</span> <span class="hidden md:inline">VocabPen</span>
+            </div>
+            
+            <nav class="flex bg-slate-100 p-1 rounded-xl">
+                <button onclick="switchTab('reader')" id="tab-reader" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-white text-indigo-600 shadow-sm transition">
+                    📖 อ่าน PDF
+                </button>
+                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 transition flex items-center gap-1">
+                    📊 คลังศัพท์
+                    <span id="nav-badge-total" class="bg-indigo-100 text-indigo-700 text-xs px-1.5 py-0.5 rounded-full">0</span>
+                </button>
+                <button onclick="switchTab('games')" id="tab-games" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 transition flex items-center gap-1">
+                    🎮 เกมทบทวน
+                    <span id="nav-badge-learning" class="bg-amber-100 text-amber-700 text-xs px-1.5 py-0.5 rounded-full">0</span>
+                </button>
+            </nav>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <!-- Input Mode Selector -->
+            <div id="input-mode-wrapper" class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
+                <button onclick="setInputMode('smart')" id="mode-smart" class="px-2.5 py-1 rounded-lg bg-indigo-600 text-white shadow-sm transition">
+                    ✨ ปากกาขีด / นิ้วเลื่อน
+                </button>
+                <button onclick="setInputMode('draw')" id="mode-draw" class="px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition">
+                    🖍️ ขีดอย่างเดียว
+                </button>
+                <button onclick="setInputMode('scroll')" id="mode-scroll" class="px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition">
+                    🖐️ เลื่อนอ่าน
+                </button>
+            </div>
+
+            <!-- Dict & AI Settings Button -->
+            <button onclick="openSettingsModal()" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition">
+                <span id="api-dot" class="w-2 h-2 rounded-full bg-slate-400"></span>
+                <span>⚙️</span> <span id="dict-status-badge">ตั้งค่า Dict / AI</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- ========================================== -->
+    <!-- VIEW 1: PDF READER                         -->
+    <!-- ========================================== -->
+    <section id="view-reader" class="flex-1 flex flex-col overflow-hidden no-print">
+        <div class="bg-slate-50 border-b border-slate-200 px-3 sm:px-4 py-2 flex flex-wrap justify-between items-center gap-2 text-xs sm:text-sm shrink-0">
+            <div class="flex items-center gap-2">
+                <label class="cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 px-3 py-1.5 rounded-lg font-semibold text-slate-700 shadow-sm flex items-center gap-1.5">
+                    <span>📂 เปิด PDF</span>
+                    <input type="file" id="file-upload" accept="application/pdf" class="hidden">
+                </label>
+
+                <button onclick="runPageOCR()" id="btn-ocr" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold shadow-sm flex items-center gap-1 transition">
+                    🔍 สแกน OCR หน้านี้
+                </button>
+
+                <button onclick="exportAnnotatedPdf()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm transition">⬇️ ดาวน์โหลด PDF</button>
+                <span id="ocr-status-badge" class="hidden text-xs px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 font-medium"></span>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+                <button onclick="changePage(-1)" id="btn-prev" class="px-2.5 py-1 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-40">◀</button>
+                <div class="flex items-center gap-1 bg-white border border-slate-300 px-2 py-1 rounded-lg">
+                    <span>หน้า</span>
+                    <input type="number" id="page-input" value="0" min="1" onchange="jumpToPage(this.value)" class="w-10 text-center font-bold focus:outline-none">
+                    <span>/ <span id="page-count">0</span></span>
+                </div>
+                <button onclick="changePage(1)" id="btn-next" class="px-2.5 py-1 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-40">▶</button>
+            </div>
+
+            <div class="flex items-center gap-1">
+                <button onclick="changeZoom(-0.25)" class="px-2.5 py-1 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 font-bold">−</button>
+                <span id="zoom-level" class="px-2 font-semibold text-slate-700 min-w-[52px] text-center">150%</span>
+                <button onclick="changeZoom(0.25)" class="px-2.5 py-1 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 font-bold">+</button>
+            </div>
+        </div>
+
+        <div id="ocr-progress-bar" class="hidden bg-indigo-600 text-white px-4 py-2 text-xs font-semibold flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <span class="animate-spin">⏳</span>
+                <span id="ocr-progress-text">กำลังอ่านตัวอักษรจากภาพด้วย OCR...</span>
+            </div>
+            <span id="ocr-progress-percent">0%</span>
+        </div>
+
+        <div id="pdf-scroll-container" class="flex-1 overflow-auto p-4 sm:p-6 bg-slate-200/80 flex justify-center items-start relative">
+            <div id="pdf-empty-state" class="my-auto text-center max-w-md p-8 bg-white rounded-2xl shadow-sm border border-slate-200">
+                <div class="text-5xl mb-3">⚡</div>
+                <h2 class="text-lg font-bold text-slate-800 mb-1">VocabPen V4.3 (ใช้ Gemini 3.5 Flash เป็นหลัก)</h2>
+                <p class="text-sm text-slate-500 mb-4">โมเดล AI หลักคือ <code>gemini-3.5-flash</code> พร้อมระบบพจนานุกรมออฟไลน์ 50,000+ คำ และระบบขีดคำศัพท์แบบไร้ดีเลย์</p>
+                <div class="flex flex-col sm:flex-row gap-2 justify-center">
+                    <button onclick="document.getElementById('file-upload').click()" class="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition">
+                        📂 เลือกไฟล์ PDF
+                    </button>
+                    <button onclick="openSettingsModal()" class="px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition">
+                        ⚙️ ตั้งค่า Dict / AI
+                    </button>
+                </div>
+            </div>
+
+            <div id="pdf-wrapper" class="hidden">
+                <canvas id="pdf-canvas"></canvas>
+                <div id="word-hit-layer"></div>
+                <canvas id="draw-canvas"></canvas>
+            </div>
+        </div>
+        <div id="sentence-sheet" class="hidden">
+            <div style="display:flex;justify-content:space-between;align-items:center"><b style="color:#4338ca">📖 แปลประโยค</b><button onclick="closeSentenceSheet()" style="font-size:18px;color:#94a3b8">✕</button></div>
+            <p id="ss-en" class="ss-en"></p>
+            <p id="ss-th" class="ss-th"></p>
+            <div class="ss-bar"><span id="ss-src"></span><span style="flex:1;text-align:right">ไม่บันทึกลงคลังคำศัพท์</span><button onclick="speakSentence()">🔊</button><button onclick="copySentence()">📋</button><button onclick="runSentence()">🔄</button></div>
+        </div>
+        <div id="tool-dock" class="no-print">
+            <button id="tool-word" class="on" onclick="setTool('word')">🔤<span>คำศัพท์</span></button>
+            <button id="tool-sentence" onclick="setTool('sentence')">📖<span>ประโยค</span></button>
+            <i></i>
+            <button id="tool-ink" onclick="setTool('ink')">✒️<span>เขียน</span></button>
+            <span id="ink-colors" class="hidden"><button id="ink-black" class="dot on" style="--c:#111827" onclick="setInkColor('black')"></button><button id="ink-red" class="dot" style="--c:#dc2626" onclick="setInkColor('red')"></button></span>
+            <button id="tool-erase" onclick="setTool('erase')">🧽<span>ยางลบ</span></button>
+        </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- VIEW 2: DASHBOARD & VOCABULARY BANK        -->
+    <!-- ========================================== -->
+    <section id="view-dashboard" class="flex-1 overflow-auto p-4 sm:p-6 hidden no-print">
+        <div class="max-w-6xl mx-auto space-y-6">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">คำศัพท์ที่ขีดทั้งหมด</p>
+                    <p id="stat-total" class="text-3xl font-bold text-slate-800 mt-1">0</p>
+                    <p class="text-xs text-slate-500 mt-1">สะสมจากการอ่าน PDF</p>
+                </div>
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-amber-200 bg-amber-50/30">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-amber-600">กำลังท่องจำ (Learning)</p>
+                    <p id="stat-learning" class="text-3xl font-bold text-amber-600 mt-1">0</p>
+                    <p class="text-xs text-amber-700/70 mt-1">อยู่ในคิวเกมทบทวน</p>
+                </div>
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-emerald-200 bg-emerald-50/30">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-emerald-600">จำได้แม่นแล้ว (Mastered)</p>
+                    <p id="stat-mastered" class="text-3xl font-bold text-emerald-600 mt-1">0</p>
+                    <p class="text-xs text-emerald-700/70 mt-1">คัดออกจากเกมแล้ว</p>
+                </div>
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-indigo-200 bg-indigo-50/30 flex flex-col justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-indigo-600">ยังไม่มีคำแปล / รอ Sync</p>
+                        <p id="stat-pending" class="text-3xl font-bold text-indigo-600 mt-1">0</p>
+                    </div>
+                    <button onclick="syncOfflineVocabs(false)" id="btn-sync-ai" class="mt-2 w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl transition shadow-sm">
+                        ⚡ แปลคำที่ค้างทั้งหมดทันที
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap justify-between items-center gap-4">
+                <div class="flex flex-wrap items-center gap-2">
+                    <input type="text" id="search-vocab" oninput="renderVocabTable()" placeholder="🔍 ค้นหาคำศัพท์ หรือคำแปล..." class="border border-slate-300 rounded-xl px-3.5 py-2 text-sm w-60 focus:outline-none focus:border-indigo-500">
+                    <select id="filter-status" onchange="renderVocabTable()" class="border border-slate-300 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none">
+                        <option value="ALL">แสดงทุกสถานะ</option>
+                        <option value="Learning">กำลังท่องจำ (Learning)</option>
+                        <option value="Mastered">จำได้แล้ว (Mastered)</option>
+                        <option value="Pending">ยังไม่มีคำแปล</option>
+                    </select>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2">
+                    <button onclick="exportPrintablePDF()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition flex items-center gap-1.5 shadow-sm">
+                        🖨️ โหลดคลังคำศัพท์เป็น PDF
+                    </button>
+                    <button onclick="exportBackupJSON()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-medium transition">
+                        ⬇️ Backup คำศัพท์
+                    </button>
+                    <label class="cursor-pointer px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-sm font-semibold transition">
+                        📄 นำเข้าคำศัพท์จาก PDF
+                        <input type="file" accept="application/pdf" class="hidden" onchange="importVocabFromPdf(event)">
+                    </label>
+                    <label class="cursor-pointer px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-medium transition">
+                        ⬆️ Restore
+                        <input type="file" accept=".json" onchange="importBackupJSON(event)" class="hidden">
+                    </label>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase">
+                                <th class="p-4">คำศัพท์ (Word)</th>
+                                <th class="p-4">ประเภท (POS)</th>
+                                <th class="p-4">คำแปล (Meaning)</th>
+                                <th class="p-4">บริบทจาก PDF (Context)</th>
+                                <th class="p-4">สถานะ</th>
+                                <th class="p-4 text-right">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="vocab-table-body" class="divide-y divide-slate-200 text-sm"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- VIEW 3: FLASHCARD & QUIZ GAMES             -->
+    <!-- ========================================== -->
+    <section id="view-games" class="flex-1 overflow-auto p-4 sm:p-6 hidden no-print">
+        <div class="max-w-2xl mx-auto">
+            <div class="flex justify-between items-center mb-6">
+                <div class="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+                    <button onclick="switchGameMode('flashcard')" id="btn-mode-flashcard" class="px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white transition">
+                        🗂️ พลิกการ์ด (Flashcard)
+                    </button>
+                    <button onclick="switchGameMode('quiz')" id="btn-mode-quiz" class="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:text-slate-900 transition">
+                        ❓ ทายช้อยส์ 4 ข้อ (Quiz)
+                    </button>
+                </div>
+                <div class="text-sm font-medium text-slate-600">
+                    เหลือในกอง: <span id="game-remaining-count" class="font-bold text-indigo-600">0</span> คำ
+                </div>
+            </div>
+
+            <div id="game-empty-state" class="hidden bg-white p-10 rounded-3xl shadow-sm border border-slate-200 text-center">
+                <div class="text-6xl mb-4">🎉</div>
+                <h3 class="text-xl font-bold text-slate-800 mb-2">ไม่มีคำศัพท์ค้างในกองแล้ว!</h3>
+                <p class="text-slate-500 text-sm mb-6">คุณจำคำศัพท์ทั้งหมดในคลังได้แล้ว หรือยังไม่ได้ขีดคำศัพท์เพิ่มใน PDF</p>
+                <button onclick="switchTab('reader')" class="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700">
+                    กลับไปอ่าน PDF ต่อ
+                </button>
+            </div>
+
+            <div id="game-flashcard-container" class="space-y-6">
+                <div onclick="flipFlashcard()" class="perspective cursor-pointer h-80 w-full">
+                    <div id="flashcard-inner" class="transform-style-3d relative w-full h-full">
+                        <div class="backface-hidden absolute inset-0 bg-white rounded-3xl shadow-md border border-slate-200 p-8 flex flex-col justify-between items-center text-center">
+                            <span class="text-xs font-semibold uppercase tracking-wider text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full">แตะเพื่อพลิกดูคำแปล</span>
+                            <div>
+                                <h2 id="fc-word" class="text-4xl font-bold text-slate-800 mb-2">Word</h2>
+                                <p id="fc-phonetics" class="text-slate-400 text-lg mb-4">/phonetics/</p>
+                                <button onclick="event.stopPropagation(); speakWord(document.getElementById('fc-word').textContent)" class="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-full text-sm font-medium text-slate-700">
+                                    🔊 ฟังเสียงอ่าน
+                                </button>
+                            </div>
+                            <p id="fc-context" class="text-sm text-slate-500 italic line-clamp-2 max-w-md"></p>
+                        </div>
+
+                        <div class="backface-hidden rotate-y-180 absolute inset-0 bg-indigo-950 text-white rounded-3xl shadow-md p-8 flex flex-col justify-center items-center text-center">
+                            <span id="fc-pos" class="text-xs font-semibold uppercase tracking-wider bg-indigo-800 text-indigo-200 px-3 py-1 rounded-full mb-3">Noun</span>
+                            <h3 id="fc-translation" class="text-3xl font-bold mb-4">คำแปลภาษาไทย</h3>
+                            <p id="fc-context-back" class="text-sm text-indigo-200/80 italic max-w-md"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <button onclick="handleFlashcardResult(false)" class="py-4 bg-white hover:bg-amber-50 text-amber-700 border-2 border-amber-300 rounded-2xl font-bold text-base shadow-sm transition">
+                        🔄 ยังจำไม่ได้ (เก็บไว้เล่นต่อ)
+                    </button>
+                    <button onclick="handleFlashcardResult(true)" class="py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-base shadow-sm transition">
+                        ✅ จำได้แล้ว (คัดออกจากเกม)
+                    </button>
+                </div>
+            </div>
+
+            <div id="game-quiz-container" class="hidden bg-white rounded-3xl shadow-sm border border-slate-200 p-8 space-y-6">
+                <div class="text-center space-y-2">
+                    <div class="flex justify-center items-center gap-2">
+                        <h2 id="quiz-word" class="text-3xl font-bold text-slate-800">Word</h2>
+                        <button onclick="speakWord(document.getElementById('quiz-word').textContent)" class="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-sm">🔊</button>
+                    </div>
+                    <p id="quiz-pos" class="text-xs font-semibold uppercase text-indigo-600"></p>
+                    <p id="quiz-context" class="text-sm text-slate-500 italic bg-slate-50 p-3 rounded-xl"></p>
+                </div>
+
+                <div id="quiz-options" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+
+                <div id="quiz-feedback" class="hidden pt-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-3">
+                    <p id="quiz-feedback-text" class="font-bold text-base"></p>
+                    <div class="flex gap-2 w-full sm:w-auto">
+                        <button onclick="nextQuizQuestion()" class="flex-1 sm:flex-initial px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-sm">
+                            ข้อถัดไป ➡️
+                        </button>
+                        <button id="btn-quiz-master" onclick="markQuizWordMastered()" class="flex-1 sm:flex-initial px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm">
+                            ✅ จำแม่นแล้ว (เอาออกจากเกม)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- FLOATING POPUP                             -->
+    <!-- ========================================== -->
+    <div id="vocab-popup" class="fixed hidden bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-50 w-80 no-print">
+        <div class="flex justify-between items-start gap-2 mb-2">
+            <div>
+                <div class="flex items-center gap-2">
+                    <h3 id="popup-word" class="text-xl font-bold text-indigo-700"></h3>
+                    <button onclick="speakWord(document.getElementById('popup-word').textContent)" class="text-slate-500 hover:text-indigo-600 text-base">🔊</button>
+                </div>
+                <p id="popup-phonetics" class="text-xs text-slate-400"></p>
+            </div>
+            <button onclick="closePopup()" class="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
+        </div>
+
+        <div class="space-y-2 text-sm">
+            <div class="flex gap-2 items-center">
+                <input type="text" id="popup-pos-input" placeholder="ประเภทคำ (Noun, Verb...)" class="w-1/2 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-indigo-600 bg-indigo-50/50 focus:outline-none">
+                <span id="popup-source-badge" class="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">Instant Dict</span>
+            </div>
+            <div>
+                <input type="text" id="popup-translation-input" placeholder="คำแปลภาษาไทย..." class="w-full border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-800 focus:outline-none focus:border-indigo-500">
+            </div>
+            <p id="popup-context" class="text-xs text-slate-500 italic line-clamp-2 bg-slate-50 p-2 rounded-lg"></p>
+        </div>
+
+        <div class="mt-3 pt-2 border-t border-slate-100 flex justify-between items-center">
+            <button onclick="deleteCurrentPopupVocab()" class="text-xs text-rose-500 hover:underline">🗑️ ลบ</button>
+            <div class="flex gap-1.5">
+                <button onclick="askGeminiForPopupWord()" class="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold rounded-lg">
+                    ✨ ให้ AI แปลตามบริบท
+                </button>
+                <button onclick="savePopupEdits()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg">บันทึก</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- SETTINGS MODAL                             -->
+    <!-- ========================================== -->
+    <div id="modal-settings" class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs hidden flex justify-center items-center z-50 p-4 no-print">
+        <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center">
+                <h2 class="text-lg font-bold text-slate-800">⚙️ ตั้งค่าพจนานุกรมความเร็วสูง & Gemini 3.5</h2>
+                <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+            </div>
+
+            <!-- SECTION 1: 1-CLICK LEXITRON DICTIONARY DOWNLOADER -->
+            <div class="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-3">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h3 class="text-sm font-bold text-emerald-950">⚡ พจนานุกรมออฟไลน์ในเครื่อง (แปลทันที 0.01 วินาที)</h3>
+                        <p id="dict-count-label" class="text-xs text-emerald-700 mt-0.5">กำลังตรวจสอบจำนวนคำศัพท์ในเครื่อง...</p>
+                    </div>
+                    <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-200/70 text-emerald-900">ไม่ค้าง 100%</span>
+                </div>
+
+                <div id="dict-download-progress" class="hidden space-y-1">
+                    <div class="w-full bg-emerald-200 h-2.5 rounded-full overflow-hidden">
+                        <div id="dict-progress-fill" class="bg-emerald-600 h-full w-0 transition-all duration-200"></div>
+                    </div>
+                    <p id="dict-progress-status" class="text-[11px] font-semibold text-emerald-800">กำลังดาวน์โหลดฐานข้อมูล...</p>
+                </div>
+
+                <div class="flex flex-wrap gap-2 pt-1">
+                    <button onclick="downloadFullLexitronDictionary()" id="btn-download-lexitron" class="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition">
+                        ⚡ ดาวน์โหลดพจนานุกรม LEXiTRON (50,000+ คำ) ลงเครื่อง
+                    </button>
+                    <button onclick="exportLocalDictAsJSON()" class="py-2.5 px-3 bg-white hover:bg-slate-50 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition">
+                        💾 เซฟเป็น .JSON
+                    </button>
+                </div>
+
+                <div class="pt-2 border-t border-emerald-200/60 flex items-center justify-between text-xs">
+                    <span class="text-slate-600">หรือนำเข้าไฟล์ <code>.json</code> พจนานุกรมจากเครื่อง:</span>
+                    <label class="cursor-pointer px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg font-semibold">
+                        📂 เลือกไฟล์ .JSON
+                        <input type="file" accept=".json" onchange="importCustomDict(event)" class="hidden">
+                    </label>
+                </div>
+            </div>
+
+            <!-- SECTION 2: GEMINI API KEY (UPDATED TO GEMINI-3.8-FLASH) -->
+            <div class="space-y-2 pt-2 border-t border-slate-200">
+                <div class="flex justify-between items-center">
+                    <label class="block text-xs font-semibold text-slate-700">Gemini API Key (โมเดลหลัก <code>gemini-3.5-flash</code>)</label>
+                    <select id="select-gemini-model" onchange="localStorage.setItem('gemini_preferred_model', this.value)" class="border border-slate-300 rounded-lg px-2 py-1 text-xs font-mono bg-slate-50 text-indigo-700 font-semibold">
+                        <option value="gemini-3.5-flash">gemini-3.5-flash (หลัก)</option>
+                        <option value="gemini-3.8-flash">gemini-3.8-flash</option>
+                        <option value="gemini-3.8-pro">gemini-3.8-pro</option>
+                        <option value="auto">🔄 ค้นหาอัตโนมัติ</option>
+                    </select>
+                </div>
+                <div class="flex gap-2">
+                    <div class="relative flex-1">
+                        <input type="password" id="input-api-key" placeholder="AIzaSy..." class="w-full border border-slate-300 rounded-xl pl-3.5 pr-9 py-2 text-sm font-mono focus:outline-none focus:border-indigo-600">
+                        <button type="button" onclick="toggleShowKey()" class="absolute right-2.5 top-2 text-slate-400 hover:text-slate-700 text-sm">👁️</button>
+                    </div>
+                    <button onclick="testAndDiscoverGemini()" id="btn-test-key" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shrink-0 transition">
+                        🧪 ทดสอบ Key
+                    </button>
+                </div>
+                <div id="api-test-result" class="hidden p-3 rounded-xl text-xs leading-relaxed border"></div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+                <button onclick="closeSettingsModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">ปิดหน้าต่าง</button>
+                <button onclick="saveApiKey()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold">บันทึก</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PRINTABLE AREA -->
+    <div id="print-area" class="hidden">
+        <div class="p-8">
+            <h1 class="text-2xl font-bold mb-1">ตารางทบทวนคำศัพท์ (Vocabulary Sheet)</h1>
+            <p id="print-subtitle" class="text-sm text-gray-500 mb-6"></p>
+            <table class="w-full border-collapse border border-gray-400 text-sm">
+                <thead>
+                    <tr class="bg-gray-100">
+                        <th class="border border-gray-400 p-2 text-left">#</th>
+                        <th class="border border-gray-400 p-2 text-left">คำศัพท์ (Word)</th>
+                        <th class="border border-gray-400 p-2 text-left">ประเภท (POS)</th>
+                        <th class="border border-gray-400 p-2 text-left">คำอ่าน</th>
+                        <th class="border border-gray-400 p-2 text-left">ความหมาย (Meaning)</th>
+                        <th class="border border-gray-400 p-2 text-left">บริบทจากเอกสาร</th>
+                    </tr>
+                </thead>
+                <tbody id="print-table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================================
+        // 1. BUILT-IN CORE DICTIONARY
+        // ============================================================================
+        const BUILTIN_DICT = {
+            "manager": { t: "ผู้จัดการ", pos: "Noun", ph: "/ˈmænɪdʒər/" },
+            "project": { t: "โครงการ, แผนงาน", pos: "Noun / Verb", ph: "/ˈprɑːdʒekt/" },
+            "portfolio": { t: "แฟ้มสะสมผลงาน, กลุ่มสินทรัพย์", pos: "Noun", ph: "/pɔːrtˈfoʊlioʊ/" },
+            "researcher": { t: "นักวิจัย, ผู้ค้นคว้า", pos: "Noun", ph: "/ˈriːsɜːrtʃər/" },
+            "research": { t: "การวิจัย, ค้นคว้า", pos: "Noun / Verb", ph: "/ˈriːsɜːrtʃ/" },
+            "strategy": { t: "กลยุทธ์, ยุทธศาสตร์", pos: "Noun", ph: "/ˈstrætədʒi/" },
+            "strategic": { t: "เชิงกลยุทธ์", pos: "Adjective", ph: "/strəˈtiːdʒɪk/" },
+            "network": { t: "เครือข่าย", pos: "Noun", ph: "/ˈnetwɜːrk/" },
+            "develop": { t: "พัฒนา, สร้างสรรค์", pos: "Verb", ph: "/dɪˈveləp/" },
+            "development": { t: "การพัฒนา, ความเจริญ", pos: "Noun", ph: "/dɪˈveləpmənt/" },
+            "design": { t: "การออกแบบ, ออกแบบ", pos: "Noun / Verb", ph: "/dɪˈzaɪn/" },
+            "urban": { t: "เกี่ยวกับเมือง, ในเมือง", pos: "Adjective", ph: "/ˈɜːrbən/" },
+            "district": { t: "ย่าน, เขต, อำเภอ", pos: "Noun", ph: "/ˈdɪstrɪkt/" },
+            "public": { t: "สาธารณะ, ประชาชน", pos: "Adj / Noun", ph: "/ˈpʌblɪk/" },
+            "space": { t: "พื้นที่, ช่องว่าง", pos: "Noun", ph: "/speɪs/" },
+            "creative": { t: "สร้างสรรค์", pos: "Adjective", ph: "/kriˈeɪtɪv/" },
+            "economy": { t: "เศรษฐกิจ", pos: "Noun", ph: "/ɪˈkɑːnəmi/" },
+            "agency": { t: "หน่วยงาน, ตัวแทน", pos: "Noun", ph: "/ˈeɪdʒənsi/" },
+            "contact": { t: "ติดต่อ, ข้อมูลติดต่อ", pos: "Noun / Verb", ph: "/ˈkɑːntækt/" },
+            "about": { t: "เกี่ยวกับ, ประมาณ", pos: "Prep / Adv", ph: "/əˈbaʊt/" },
+            "photo": { t: "ภาพถ่าย", pos: "Noun", ph: "/ˈfoʊtoʊ/" },
+            "home": { t: "หน้าหลัก, บ้าน", pos: "Noun", ph: "/hoʊm/" },
+            "page": { t: "หน้ากระดาษ, หน้าเว็บ", pos: "Noun", ph: "/peɪdʒ/" },
+            "assistant": { t: "ผู้ช่วย", pos: "Noun", ph: "/əˈsɪstənt/" },
+            "director": { t: "ผู้อำนวยการ, ผู้กำกับ", pos: "Noun", ph: "/dəˈrektər/" },
+            "coordinator": { t: "ผู้ประสานงาน", pos: "Noun", ph: "/koʊˈɔːrdɪneɪtər/" },
+            "experience": { t: "ประสบการณ์", pos: "Noun / Verb", ph: "/ɪkˈspɪriəns/" },
+            "education": { t: "การศึกษา", pos: "Noun", ph: "/ˌedʒuˈkeɪʃn/" },
+            "skill": { t: "ทักษะ, ความชำนาญ", pos: "Noun", ph: "/skɪl/" },
+            "summary": { t: "บทสรุป, สรุปย่อ", pos: "Noun", ph: "/ˈsʌməri/" },
+            "objective": { t: "วัตถุประสงค์, เป้าหมาย", pos: "Noun / Adj", ph: "/əbˈdʒektɪv/" },
+            "achievement": { t: "ความสำเร็จ, ผลงาน", pos: "Noun", ph: "/əˈtʃiːvmənt/" },
+            "responsibility": { t: "ความรับผิดชอบ, หน้าที่", pos: "Noun", ph: "/rɪˌspɑːnsəˈbɪləti/" },
+            "organization": { t: "องค์กร, การจัดระเบียบ", pos: "Noun", ph: "/ˌɔːrɡənəˈzeɪʃn/" },
+            "community": { t: "ชุมชน, สังคม", pos: "Noun", ph: "/kəˈmjuːnəti/" },
+            "environment": { t: "สิ่งแวดล้อม, สภาพแวดล้อม", pos: "Noun", ph: "/ɪnˈvaɪrənmənt/" },
+            "sustainable": { t: "ยั่งยืน", pos: "Adjective", ph: "/səˈsteɪnəbl/" },
+            "innovation": { t: "นวัตกรรม", pos: "Noun", ph: "/ˌɪnəˈveɪʃn/" },
+            "collaborate": { t: "ร่วมมือกันทำงาน", pos: "Verb", ph: "/kəˈlæbəreɪt/" },
+            "collaboration": { t: "ความร่วมมือ", pos: "Noun", ph: "/kəˌlæbəˈreɪʃn/" },
+            "analysis": { t: "การวิเคราะห์", pos: "Noun", ph: "/əˈnæləsɪs/" },
+            "evaluate": { t: "ประเมินผล", pos: "Verb", ph: "/ɪˈvæljueɪt/" },
+            "implement": { t: "นำไปปฏิบัติจริง", pos: "Verb", ph: "/ˈɪmplɪment/" },
+            "management": { t: "การจัดการ, คณะผู้บริหาร", pos: "Noun", ph: "/ˈmænɪdʒmənt/" },
+            "planning": { t: "การวางแผน", pos: "Noun", ph: "/ˈplænɪŋ/" },
+            "process": { t: "กระบวนการ, ขั้นตอน", pos: "Noun / Verb", ph: "/ˈprɑːses/" },
+            "resource": { t: "ทรัพยากร", pos: "Noun", ph: "/ˈriːsɔːrs/" },
+            "solution": { t: "ทางออก, วิธีแก้ปัญหา", pos: "Noun", ph: "/səˈluːʃn/" },
+            "support": { t: "สนับสนุน, ช่วยเหลือ", pos: "Verb / Noun", ph: "/səˈpɔːrt/" },
+            "system": { t: "ระบบ", pos: "Noun", ph: "/ˈsɪstəm/" },
+            "technology": { t: "เทคโนโลยี", pos: "Noun", ph: "/tekˈnɑːlədʒi/" },
+            "vision": { t: "วิสัยทัศน์", pos: "Noun", ph: "/ˈvɪʒn/" },
+            "mission": { t: "พันธกิจ, ภารกิจ", pos: "Noun", ph: "/ˈmɪʃn/" },
+            "concept": { t: "แนวคิด", pos: "Noun", ph: "/ˈkɑːnsept/" },
+            "deliberate": { t: "ไตร่ตรองไว้ก่อน, ตั้งใจ", pos: "Adjective / Verb", ph: "/dɪˈlɪbərət/" },
+            "thousand": { t: "หลักพัน, จำนวนพัน", pos: "Noun / Adj", ph: "/ˈθaʊznd/" },
+            "because": { t: "เพราะว่า, เนื่องจาก", pos: "Conjunction", ph: "/bɪˈkɔːz/" },
+            "different": { t: "แตกต่างกัน", pos: "Adjective", ph: "/ˈdɪfrənt/" },
+            "important": { t: "สำคัญ", pos: "Adjective", ph: "/ɪmˈpɔːrtnt/" },
+            "available": { t: "พร้อมใช้งาน, มีอยู่", pos: "Adjective", ph: "/əˈveɪləbl/" },
+            "information": { t: "ข้อมูลข่าวสาร", pos: "Noun", ph: "/ˌɪnfərˈmeɪʃn/" },
+            "understand": { t: "เข้าใจ", pos: "Verb", ph: "/ˌʌndərˈstænd/" },
+            "consider": { t: "พิจารณา", pos: "Verb", ph: "/kənˈsɪdər/" },
+            "provide": { t: "จัดหาให้, มอบให้", pos: "Verb", ph: "/prəˈvaɪd/" },
+            "include": { t: "รวมถึง, ประกอบด้วย", pos: "Verb", ph: "/ɪnˈkluːd/" },
+            "continue": { t: "ดำเนินต่อไป", pos: "Verb", ph: "/kənˈtɪnjuː/" },
+            "change": { t: "เปลี่ยนแปลง", pos: "Verb / Noun", ph: "/tʃeɪndʒ/" },
+            "create": { t: "สร้างสรรค์, ก่อให้เกิด", pos: "Verb", ph: "/kriˈeɪt/" },
+            "increase": { t: "เพิ่มขึ้น", pos: "Verb / Noun", ph: "/ɪnˈkriːs/" },
+            "reduce": { t: "ลดลง", pos: "Verb", ph: "/rɪˈduːs/" },
+            "require": { t: "ต้องการ, กำหนดให้ต้องมี", pos: "Verb", ph: "/rɪˈkwaɪər/" },
+            "suggest": { t: "แนะนำ, เสนอแนะ", pos: "Verb", ph: "/səˈdʒest/" },
+            "allow": { t: "อนุญาต, เปิดโอกาสให้", pos: "Verb", ph: "/əˈlaʊ/" },
+            "appear": { t: "ปรากฏขึ้น, ดูเหมือนว่า", pos: "Verb", ph: "/əˈpɪr/" },
+            "produce": { t: "ผลิต, สร้างขึ้น", pos: "Verb", ph: "/prəˈduːs/" },
+            "expect": { t: "คาดหวัง", pos: "Verb", ph: "/ɪkˈspekt/" },
+            "decide": { t: "ตัดสินใจ", pos: "Verb", ph: "/dɪˈsaɪd/" },
+            "describe": { t: "อธิบาย, พรรณนา", pos: "Verb", ph: "/dɪˈskraɪb/" },
+            "improve": { t: "ปรับปรุงให้ดีขึ้น", pos: "Verb", ph: "/ɪmˈpruːv/" },
+            "achieve": { t: "บรรลุผลสำเร็จ", pos: "Verb", ph: "/əˈtʃiːv/" }
+        };
+
+        // ============================================================================
+        // 2. DATABASE SETUP (Dexie.js)
+        // ============================================================================
+        const db = new Dexie("iPadVocabStudioDB_V3");
+        db.version(1).stores({
+            pdfs: 'id, filename, blob, lastPage, scale',
+            vocabs: '++id, word, context, translation, pos, phonetics, status, needsSync, page, rect, timestamp',
+            ocrCache: '[pdfName+page], boxes',
+            customDict: 'word, t, pos, ph'
+        });
+        db.version(2).stores({
+            pdfs: 'id, filename, blob, lastPage, scale',
+            vocabs: '++id, word, context, translation, pos, phonetics, status, needsSync, page, rect, timestamp',
+            ocrCache: '[pdfName+page], boxes',
+            customDict: 'word, t, pos, ph',
+            ink: '[pdfName+page]'
+        });
+
+        // ============================================================================
+        // 3. STATE & RAM CACHE
+        // ============================================================================
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+        let pdfDoc = null;
+        let currentPdfName = 'default.pdf';
+        let currentPage = 1;
+        let currentScale = 1.5;
+        let inputMode = 'smart';
+        let pageWordBoxes = [];
+        let cachedPageHighlights = [];
+        let hoveredWordBox = null;
+        let hoveredWordBoxes = [];   // กล่องคำ "ทั้งหมด" ที่สโตรกเดียวพาดผ่าน (ใช้แยกกรณีขีดหลายคำรวดเดียว)
+        let activePopupVocabId = null;
+
+        let isDrawing = false;
+        let strokePoints = [];
+        let activeTouches = new Map();
+        let initialPinchDistance = null;
+        let initialScaleOnPinch = 1.5;
+        let touchPanStart = null;
+
+        let learningList = [];
+        let fcIndex = 0;
+        let currentQuizVocab = null;
+
+        const pdfCanvas = document.getElementById('pdf-canvas');
+        const pdfCtx = pdfCanvas.getContext('2d');
+        const drawCanvas = document.getElementById('draw-canvas');
+        const drawCtx = drawCanvas.getContext('2d');
+        const scrollContainer = document.getElementById('pdf-scroll-container');
+        const measureCtx = document.createElement('canvas').getContext('2d');
+
+        // ============================================================================
+        // 4. INITIALIZATION
+        // ============================================================================
+        window.addEventListener('load', async () => {
+            document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
+            document.addEventListener('gesturechange', e => e.preventDefault(), { passive: false });
+            document.addEventListener('gestureend', e => e.preventDefault(), { passive: false });
+
+            // ใช้ gemini-3.5-flash เป็นโมเดลหลัก
+            // (ย้ายค่าเก่าที่ระบบเคยเขียนทับเองอัตโนมัติ 1 ครั้ง หลังจากนั้นเคารพค่าที่ผู้ใช้เลือกในช่องเลือกโมเดล)
+            if (localStorage.getItem('model_pref_version') !== '2') {
+                localStorage.setItem('gemini_preferred_model', 'gemini-3.5-flash');
+                localStorage.setItem('model_pref_version', '2');
+            }
+            if (!localStorage.getItem('gemini_preferred_model')) {
+                localStorage.setItem('gemini_preferred_model', 'gemini-3.5-flash');
+            }
+
+            await refreshDictCountBadge();
+            await updateCounters();
+
+            const savedPdf = await db.pdfs.get(1);
+            if (savedPdf && savedPdf.blob) {
+                currentScale = savedPdf.scale || 1.5;
+                currentPdfName = savedPdf.filename || 'document.pdf';
+                document.getElementById('zoom-level').textContent = `${Math.round(currentScale * 100)}%`;
+                await loadPdfFromBlob(savedPdf.blob, savedPdf.lastPage || 1);
+            }
+        });
+
+        function sanitizeApiKey(rawKey) {
+            if (!rawKey) return '';
+            // เก็บจุด (.) ไว้ด้วย เพราะ key รูปแบบใหม่ขึ้นต้นด้วย AQ.
+            return rawKey.replace(/[^A-Za-z0-9_.\-]/g, '').trim();
+        }
+
+        async function refreshDictCountBadge() {
+            const count = await db.customDict.count();
+            const totalOffline = count + Object.keys(BUILTIN_DICT).length;
+            const badge = document.getElementById('dict-status-badge');
+            const label = document.getElementById('dict-count-label');
+            const dot = document.getElementById('api-dot');
+            const hasKey = !!sanitizeApiKey(localStorage.getItem('gemini_api_key'));
+
+            dot.className = hasKey ? 'w-2 h-2 rounded-full bg-emerald-500' : 'w-2 h-2 rounded-full bg-slate-400';
+
+            if (count > 1000) {
+                badge.textContent = `Dict (${totalOffline.toLocaleString()} คำ)`;
+                if (label) label.textContent = `✅ ติดตั้งพจนานุกรมในเครื่องแล้ว ${totalOffline.toLocaleString()} คำ (แปลทันทีใน 0.01 วินาที)`;
+            } else {
+                badge.textContent = hasKey ? `AI พร้อมใช้` : `ตั้งค่า Dict / AI`;
+                if (label) label.textContent = `ปัจจุบันมีคำศัพท์พื้นฐาน ${totalOffline.toLocaleString()} คำ (กดปุ่มสีเขียวด้านล่างเพื่อโหลดเพิ่มเป็น 50,000+ คำ)`;
+            }
+        }
+
+        // ============================================================================
+        // 5. PRECISION WORD BOX EXTRACTION
+        // ============================================================================
+        async function extractDigitalWordBoxes(page, viewport) {
+            pageWordBoxes = [];
+            pageSentences = [];
+            const textContent = await page.getTextContent();
+            const allStrings = textContent.items.map(it => it.str).join(' ');
+
+            // ตำแหน่งเริ่มต้นของแต่ละชิ้นข้อความใน allStrings (คั่นด้วยช่องว่าง 1 ตัว)
+            const itemOffsets = [];
+            let runningOffset = 0;
+            for (const it of textContent.items) {
+                itemOffsets.push(runningOffset);
+                runningOffset += it.str.length + 1;
+            }
+            pageSentences = splitSentences(allStrings);
+
+            for (let itemIdx = 0; itemIdx < textContent.items.length; itemIdx++) {
+                const item = textContent.items[itemIdx];
+                if (!item.str || !item.str.trim()) continue;
+
+                const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+                const fontHeight = Math.hypot(tx[2], tx[3]);
+                const itemX = tx[4];
+                const itemY = tx[5] - fontHeight * 0.88;
+                const itemWidth = item.width * viewport.scale;
+                const itemHeight = fontHeight * 1.15;
+
+                measureCtx.font = `${fontHeight}px sans-serif`;
+                const rawText = item.str;
+                const measuredTotalWidth = measureCtx.measureText(rawText).width || 1;
+                const scaleFactor = itemWidth / measuredTotalWidth;
+
+                const regex = /[A-Za-z]+(?:['’-][A-Za-z]+)*/g;
+                let match;
+
+                while ((match = regex.exec(rawText)) !== null) {
+                    const word = match[0];
+                    if (word.length < 2) continue;
+
+                    const prefixText = rawText.slice(0, match.index);
+                    const prefixWidth = measureCtx.measureText(prefixText).width * scaleFactor;
+                    const wordWidth = measureCtx.measureText(word).width * scaleFactor;
+
+                    pageWordBoxes.push({
+                        word: word,
+                        x: itemX + prefixWidth,
+                        y: itemY,
+                        w: wordWidth,
+                        h: itemHeight,
+                        context: extractSentenceContext(allStrings, word, itemOffsets[itemIdx] + match.index),
+                        sid: sidAt(itemOffsets[itemIdx] + match.index)
+                    });
+                }
+            }
+        }
+
+        function extractSentenceContext(fullText, targetWord, hintIdx) {
+            // hintIdx = ตำแหน่งจริงของคำที่ถูกขีด (กันไปหยิบประโยคจากคำเดียวกันที่โผล่ก่อนหน้า หรือจากคำที่เป็นส่วนหนึ่งของคำอื่น)
+            const idx = (typeof hintIdx === 'number' && hintIdx >= 0)
+                ? hintIdx
+                : fullText.toLowerCase().indexOf(targetWord.toLowerCase());
+            if (idx === -1) return targetWord;
+            const start = Math.max(0, fullText.lastIndexOf('.', idx) + 1, idx - 85);
+            let end = fullText.indexOf('.', idx);
+            if (end === -1 || end - idx > 100) end = Math.min(fullText.length, idx + 85);
+            return fullText.slice(start, end + 1).replace(/\s+/g, ' ').trim();
+        }
+
+        function findWordAlongStroke(points) {
+            if (!points || points.length === 0 || pageWordBoxes.length === 0) return null;
+
+            const hitCounts = new Map();
+            let closestBox = null;
+            let minDistance = Infinity;
+
+            for (const pt of points) {
+                for (const box of pageWordBoxes) {
+                    const padY = box.h * 0.25;
+                    const padX = 2;
+                    if (pt.x >= box.x - padX && pt.x <= box.x + box.w + padX &&
+                        pt.y >= box.y - padY && pt.y <= box.y + box.h + padY) {
+                        hitCounts.set(box, (hitCounts.get(box) || 0) + 1);
+                    }
+
+                    const cx = box.x + box.w / 2;
+                    const cy = box.y + box.h / 2;
+                    const dy = Math.abs(pt.y - cy);
+                    const dx = Math.abs(pt.x - cx);
+                    if (dy <= box.h * 0.9 && dx <= box.w * 0.8) {
+                        const dist = dy * 2.5 + dx;
+                        if (dist < minDistance) {
+                            minDistance = dist;
+                            closestBox = box;
+                        }
+                    }
+                }
+            }
+
+            if (hitCounts.size > 0) {
+                let bestBox = null;
+                let maxCount = -1;
+                for (const [box, count] of hitCounts.entries()) {
+                    if (count > maxCount) {
+                        maxCount = count;
+                        bestBox = box;
+                    }
+                }
+                return bestBox;
+            }
+
+            return closestBox;
+        }
+
+        // ขีดผ่านได้มากกว่า 1 คำ: คืนกล่องคำ "ทุกคำ" ที่สโตรกพาดผ่าน เรียงตามลำดับการอ่าน (บนลงล่าง, ซ้ายไปขวา)
+        // ใช้แยกว่าขีดโดนคำเดียว (พฤติกรรมเดิม) หรือหลายคำรวด (แปลรวมแบบใหม่)
+        function findWordsAlongStroke(points) {
+            if (!points || points.length === 0 || pageWordBoxes.length === 0) return [];
+
+            const hitSet = new Set();
+            for (const pt of points) {
+                for (const box of pageWordBoxes) {
+                    const padY = box.h * 0.25;
+                    const padX = 2;
+                    if (pt.x >= box.x - padX && pt.x <= box.x + box.w + padX &&
+                        pt.y >= box.y - padY && pt.y <= box.y + box.h + padY) {
+                        hitSet.add(box);
+                    }
+                }
+            }
+
+            if (hitSet.size > 0) {
+                return [...hitSet].sort((a, b) => (Math.abs(a.y - b.y) < Math.min(a.h, b.h) * 0.6 ? a.x - b.x : a.y - b.y));
+            }
+
+            // ไม่มีกล่องไหนโดนตรงๆ (เช่นแตะสั้นมากจนพลาดไปนิดเดียว) → ใช้ตัวที่ใกล้ที่สุดแทน เหมือนพฤติกรรมเดิม
+            const single = findWordAlongStroke(points);
+            return single ? [single] : [];
+        }
+
+        // ============================================================================
+        // 6. ZERO-LAG CANVAS RENDERING (คำศัพท์ + ลายเส้นเขียน + ไฮไลต์ประโยค)
+        // ============================================================================
+        async function loadPageHighlightsIntoRAM() {
+            const rows = await db.vocabs.where('page').equals(currentPage).toArray();
+            cachedPageHighlights = rows.filter(v => !v.pdfName || v.pdfName === currentPdfName);
+        }
+
+        async function loadPageInk() {
+            let rec = null;
+            try { rec = await db.ink.get([currentPdfName, currentPage]); } catch (e) {}
+            pageInk = (rec && rec.strokes) || [];
+        }
+
+        function drawInk(st) {
+            const k = currentScale, p = st.pts;
+            if (!p.length) return;
+            drawCtx.save();
+            drawCtx.strokeStyle = st.c;
+            drawCtx.lineWidth = st.w * k;
+            drawCtx.lineCap = 'round';
+            drawCtx.lineJoin = 'round';
+            drawCtx.beginPath();
+            drawCtx.moveTo(p[0][0] * k, p[0][1] * k);
+            if (p.length < 3) {
+                drawCtx.lineTo(p[p.length - 1][0] * k + 0.01, p[p.length - 1][1] * k);
+            } else {
+                for (let i = 1; i < p.length - 1; i++) {
+                    drawCtx.quadraticCurveTo(p[i][0] * k, p[i][1] * k, (p[i][0] + p[i + 1][0]) / 2 * k, (p[i][1] + p[i + 1][1]) / 2 * k);
+                }
+                drawCtx.lineTo(p[p.length - 1][0] * k, p[p.length - 1][1] * k);
+            }
+            drawCtx.stroke();
+            drawCtx.restore();
+        }
+
+        function redrawCanvasSync(liveStroke = null, targetWordBoxes = null) {
+            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+
+            for (const v of cachedPageHighlights) {
+                if (!v.rect) continue;
+                drawCtx.fillStyle = v.status === 'Mastered' ? 'rgba(16, 185, 129, 0.30)' : 'rgba(250, 204, 21, 0.45)';
+                drawCtx.fillRect(v.rect.x * currentScale, v.rect.y * currentScale, v.rect.w * currentScale, v.rect.h * currentScale);
+            }
+
+            if (sentRects.length) {
+                drawCtx.fillStyle = 'rgba(56, 189, 248, 0.28)';
+                for (const r of sentRects) drawCtx.fillRect(r.x, r.y, r.w, r.h);
+            }
+
+            for (const st of pageInk) drawInk(st);
+            if (inkLive) drawInk(inkLive);
+
+            if (targetWordBoxes && targetWordBoxes.length && activeTool === 'word') {
+                drawCtx.save();
+                drawCtx.fillStyle = 'rgba(79, 70, 229, 0.22)';
+                drawCtx.strokeStyle = 'rgba(79, 70, 229, 0.9)';
+                drawCtx.lineWidth = 2;
+                for (const b of targetWordBoxes) {
+                    drawCtx.fillRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4);
+                    drawCtx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4);
+                }
+                drawCtx.restore();
+            }
+
+            if (liveStroke && liveStroke.length > 1 && (activeTool === 'word' || activeTool === 'sentence')) {
+                drawCtx.save();
+                drawCtx.strokeStyle = activeTool === 'sentence' ? 'rgba(14, 165, 233, 0.75)' : 'rgba(250, 204, 21, 0.75)';
+                drawCtx.lineWidth = 10;
+                drawCtx.lineCap = 'round';
+                drawCtx.lineJoin = 'round';
+                drawCtx.beginPath();
+                drawCtx.moveTo(liveStroke[0].x, liveStroke[0].y);
+                for (let i = 1; i < liveStroke.length; i++) drawCtx.lineTo(liveStroke[i].x, liveStroke[i].y);
+                drawCtx.stroke();
+                drawCtx.restore();
+            }
+
+            if (activeTool === 'erase' && liveStroke && liveStroke.length) {
+                const l = liveStroke[liveStroke.length - 1];
+                drawCtx.save();
+                drawCtx.strokeStyle = 'rgba(71, 85, 105, 0.8)';
+                drawCtx.lineWidth = 1.5;
+                drawCtx.beginPath();
+                drawCtx.arc(l.x, l.y, ERASER_R, 0, Math.PI * 2);
+                drawCtx.stroke();
+                drawCtx.restore();
+            }
+        }
+
+        // ============================================================================
+        // 7. APPLE PENCIL & TOUCH GESTURES
+        // ============================================================================
+        // ---- สถานะเสริมสำหรับการขีด/เลื่อน ----
+        let drawPointerId = null;     // pointer ที่กำลังขีดอยู่ (กันฝ่ามือ/นิ้วอื่นมาปนเส้น)
+        let drawPointerType = '';
+
+        function resetWrapperZoomPreview() {
+            document.getElementById('pdf-wrapper').style.transform = 'scale(1)';
+            document.getElementById('zoom-level').textContent = `${Math.round(currentScale * 100)}%`;
+        }
+
+        // ล้างสถานะทั้งหมด (ใช้ตอนสถานะค้าง เช่น pointer ถูกยกเลิกโดยไม่มี pointerup)
+        function resetPointerState(redraw = true) {
+            activeTouches.clear();
+            initialPinchDistance = null;
+            touchPanStart = null;
+            isDrawing = false;
+            drawPointerId = null;
+            drawPointerType = '';
+            strokePoints = [];
+            hoveredWordBox = null;
+            hoveredWordBoxes = [];
+            resetWrapperZoomPreview();
+            if (redraw) redrawCanvasSync();
+        }
+
+        function drawPointerStillAlive() {
+            if (!isDrawing || drawPointerId === null) return false;
+            try { return drawCanvas.hasPointerCapture(drawPointerId); } catch (err) { return false; }
+        }
+
+        // ลบนิ้ว/ฝ่ามือที่ค้างอยู่ในระบบ ทั้งที่จริงๆ ไม่ได้แตะจออยู่แล้ว
+        function purgeStalePointers() {
+            for (const [id, rec] of [...activeTouches.entries()]) {
+                let alive = true;
+                if (rec.captured) {
+                    try { alive = drawCanvas.hasPointerCapture(id); } catch (err) { alive = false; }
+                }
+                if (!alive) activeTouches.delete(id);
+            }
+            if (touchPanStart && touchPanStart.type === 'touch' && !activeTouches.has(touchPanStart.id)) {
+                touchPanStart = null;
+            }
+            if (activeTouches.size < 2 && initialPinchDistance) {
+                initialPinchDistance = null;
+                resetWrapperZoomPreview();
+            }
+        }
+
+        drawCanvas.addEventListener('pointerdown', (e) => {
+            // ปากกากำลังขีดอยู่ → ไม่รับการสัมผัสจากฝ่ามือ/นิ้ว (palm rejection)
+            if (e.pointerType === 'touch' && drawPointerType === 'pen' && drawPointerStillAlive()) return;
+
+            // เส้นที่ค้างอยู่ (pointer หายไปแล้วแต่สถานะยังเป็น "กำลังขีด") → ล้างทิ้ง
+            if (isDrawing && !drawPointerStillAlive()) {
+                isDrawing = false;
+                drawPointerId = null;
+                drawPointerType = '';
+                strokePoints = [];
+                hoveredWordBox = null;
+                hoveredWordBoxes = [];
+                redrawCanvasSync();
+            }
+
+            if (e.pointerType === 'touch' && e.isPrimary) {
+                // นิ้วแรกที่แตะ = ไม่มีนิ้วอื่นอยู่บนจอแล้วแน่นอน → ล้างของเก่าที่ค้างทั้งหมด
+                activeTouches.clear();
+                touchPanStart = null;
+                if (initialPinchDistance) {
+                    initialPinchDistance = null;
+                    resetWrapperZoomPreview();
+                }
+            } else {
+                purgeStalePointers();
+            }
+
+            // จับ pointer ไว้กับ canvas เพื่อให้ได้รับ pointerup/cancel เสมอ แม้นิ้วหรือปากกาเลื่อนออกนอกพื้นที่
+            let captured = false;
+            try { drawCanvas.setPointerCapture(e.pointerId); captured = true; } catch (err) {}
+
+            if (e.pointerType === 'touch') {
+                activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY, captured });
+                if (activeTouches.size >= 2) {
+                    // นิ้วที่สอง → pinch zoom (นิ้วที่สามขึ้นไปไม่ทำอะไร)
+                    isDrawing = false;
+                    drawPointerId = null;
+                    drawPointerType = '';
+                    strokePoints = [];
+                    hoveredWordBox = null;
+                    hoveredWordBoxes = [];
+                    touchPanStart = null;
+                    redrawCanvasSync();
+                    if (activeTouches.size === 2) {
+                        const pts = Array.from(activeTouches.values());
+                        initialPinchDistance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+                        initialScaleOnPinch = currentScale;
+                    }
+                    return;
+                }
+            }
+
+            const isPen = e.pointerType === 'pen';
+            const shouldDraw =
+                (inputMode === 'smart' && (isPen || e.pointerType === 'mouse')) ||
+                (inputMode === 'draw');
+
+            if (shouldDraw) {
+                e.preventDefault();
+                if (isPen) {
+                    // ปากกาแตะจอ: ทิ้งการสัมผัสที่ค้างอยู่ทั้งหมด (ฝ่ามือ) กันหน้าเลื่อนหรือซูมเอง
+                    activeTouches.clear();
+                    touchPanStart = null;
+                    if (initialPinchDistance) {
+                        initialPinchDistance = null;
+                        resetWrapperZoomPreview();
+                    }
+                }
+                isDrawing = true;
+                drawPointerId = e.pointerId;
+                drawPointerType = e.pointerType;
+                toolStart(getCanvasCoords(e));
+            } else if (e.pointerType === 'touch' || inputMode === 'scroll') {
+                // เลื่อนหน้า: นิ้วเลื่อนได้เสมอ / ปากกา-เมาส์เลื่อนได้ในโหมด "เลื่อนอ่าน"
+                touchPanStart = {
+                    id: e.pointerId,
+                    type: e.pointerType,
+                    x: e.clientX,
+                    y: e.clientY,
+                    scrollLeft: scrollContainer.scrollLeft,
+                    scrollTop: scrollContainer.scrollTop
+                };
+            }
+        });
+
+        drawCanvas.addEventListener('pointermove', (e) => {
+            if (e.pointerType === 'touch') {
+                const rec = activeTouches.get(e.pointerId);
+                if (rec) {
+                    rec.x = e.clientX;
+                    rec.y = e.clientY;
+
+                    if (activeTouches.size === 2 && initialPinchDistance) {
+                        e.preventDefault();
+                        const pts = Array.from(activeTouches.values());
+                        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+                        const ratio = dist / initialPinchDistance;
+                        const previewScale = Math.min(3.0, Math.max(0.75, initialScaleOnPinch * ratio));
+                        document.getElementById('zoom-level').textContent = `${Math.round(previewScale * 100)}%`;
+                        const cssRatio = previewScale / currentScale;
+                        document.getElementById('pdf-wrapper').style.transform = `scale(${cssRatio})`;
+                        return;
+                    }
+                }
+            }
+
+            if (touchPanStart && e.pointerId === touchPanStart.id && !isDrawing &&
+                (e.pointerType !== 'touch' || activeTouches.size === 1)) {
+                scrollContainer.scrollLeft = touchPanStart.scrollLeft + (touchPanStart.x - e.clientX);
+                scrollContainer.scrollTop = touchPanStart.scrollTop + (touchPanStart.y - e.clientY);
+                return;
+            }
+
+            // รับเฉพาะ pointer ที่เป็นเจ้าของเส้น (ไม่ให้ฝ่ามือ/นิ้วอื่นมาเพิ่มจุดในเส้นของปากกา)
+            if (isDrawing && e.pointerId === drawPointerId) {
+                e.preventDefault();
+                const batch = (typeof e.getCoalescedEvents === 'function') ? e.getCoalescedEvents() : [];
+                for (const ev of (batch.length ? batch : [e])) {
+                    strokePoints.push(getCanvasCoords(ev));
+                }
+                toolMove();
+            }
+        });
+
+        drawCanvas.addEventListener('pointerup', async (e) => {
+            if (e.pointerType === 'touch') {
+                if (activeTouches.size === 2 && initialPinchDistance) {
+                    const pts = Array.from(activeTouches.values());
+                    const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+                    const ratio = dist / initialPinchDistance;
+                    currentScale = Math.min(3.0, Math.max(0.75, +(initialScaleOnPinch * ratio).toFixed(2)));
+                    document.getElementById('pdf-wrapper').style.transform = 'scale(1)';
+                    initialPinchDistance = null;
+                    touchPanStart = null;
+                    activeTouches.clear();
+                    try { await renderCurrentPage(); } catch (err) { console.error(err); }
+                    return;
+                }
+                activeTouches.delete(e.pointerId);
+            }
+            if (touchPanStart && touchPanStart.id === e.pointerId) touchPanStart = null;
+
+            if (!isDrawing || e.pointerId !== drawPointerId) return;
+            e.preventDefault();
+            isDrawing = false;
+            drawPointerId = null;
+            drawPointerType = '';
+
+            toolEnd(e);
+        });
+
+        // pointer ถูกยกเลิก (OS ตัดฝ่ามือทิ้ง, กดค้างจนเมนูคลิกขวาขึ้น, สลับแอป ฯลฯ) หรือหลุดจากการจับ
+        // → เดิมโค้ดไม่ดักเหตุการณ์นี้ ทำให้สถานะ "นิ้วค้าง/กำลังขีดค้าง" สะสมจนนิ้วเลื่อนหน้าไม่ได้อีก
+        function endPointerTracking(e) {
+            if (e.pointerType === 'touch') {
+                activeTouches.delete(e.pointerId);
+                if (activeTouches.size < 2 && initialPinchDistance) {
+                    initialPinchDistance = null;
+                    resetWrapperZoomPreview();
+                }
+            }
+            if (touchPanStart && touchPanStart.id === e.pointerId) touchPanStart = null;
+            if (isDrawing && e.pointerId === drawPointerId) {
+                isDrawing = false;
+                drawPointerId = null;
+                drawPointerType = '';
+                strokePoints = [];
+                hoveredWordBox = null;
+                hoveredWordBoxes = [];
+                inkLive = null;
+                redrawCanvasSync();
+            }
+        }
+        drawCanvas.addEventListener('pointercancel', endPointerTracking);
+        drawCanvas.addEventListener('lostpointercapture', endPointerTracking);
+        drawCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        window.addEventListener('blur', () => resetPointerState());
+        document.addEventListener('visibilitychange', () => { if (document.hidden) resetPointerState(); });
+
+        function getCanvasCoords(e) {
+            const rect = drawCanvas.getBoundingClientRect();
+            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        }
+
+        // <<VP-TOOLS-START>>
+        // ============================================================================
+        // 7B. เครื่องมือ: คำศัพท์ / ประโยค / เขียน / ยางลบ
+        // ============================================================================
+        let activeTool = 'word';
+        let inkColor = '#111827';
+        let pageInk = [];          // [{c, w, pts:[[x,y]...]}] พิกัดแบบ scale=1
+        let inkLive = null;
+        let inkDirty = false;
+        let pageSentences = [];
+        let sentRects = [];
+        let sentHits = new Set();
+        let procIdx = 0;
+        let sentReq = 0;
+        let sentSel = null;
+        let hideAnnots = false;
+        const ERASER_R = 14, INK_W = 2.4;
+
+        function setTool(t) {
+            activeTool = t;
+            closePopup();
+            closeSentenceSheet();
+            ['word', 'sentence', 'ink', 'erase'].forEach(x => document.getElementById('tool-' + x).classList.toggle('on', x === t));
+            document.getElementById('ink-colors').classList.toggle('hidden', t !== 'ink');
+        }
+        function setInkColor(c) {
+            inkColor = c === 'red' ? '#dc2626' : '#111827';
+            ['black', 'red'].forEach(x => document.getElementById('ink-' + x).classList.toggle('on', x === c));
+            setTool('ink');
+        }
+
+        function toolStart(pt) {
+            strokePoints = [pt];
+            sentHits = new Set();
+            procIdx = 0;
+            sentRects = [];
+            if (activeTool === 'ink') inkLive = { c: inkColor, w: INK_W, pts: [] };
+            toolMove();
+        }
+        function toolMove() {
+            if (activeTool === 'word') {
+                hoveredWordBoxes = findWordsAlongStroke(strokePoints);
+            } else if (activeTool === 'sentence') {
+                accumulateHits();
+                const sel = selectSentence();
+                sentRects = sel ? sel.rects : [];
+            } else if (activeTool === 'ink') {
+                inkLive.pts = strokePoints.map(p => [+(p.x / currentScale).toFixed(2), +(p.y / currentScale).toFixed(2)]);
+            } else {
+                for (; procIdx < strokePoints.length; procIdx++) eraseAt(strokePoints[procIdx]);
+            }
+            redrawCanvasSync(strokePoints, hoveredWordBoxes);
+        }
+        function toolEnd(e) {
+            const finalWordBoxes = activeTool === 'word' ? (hoveredWordBoxes.length ? hoveredWordBoxes : findWordsAlongStroke(strokePoints)) : [];
+            strokePoints = [];
+            hoveredWordBoxes = [];
+            if (activeTool === 'ink') {
+                if (inkLive && inkLive.pts.length) { pageInk.push(inkLive); saveInk(); }
+                inkLive = null;
+                redrawCanvasSync();
+            } else if (activeTool === 'erase') {
+                if (inkDirty) { inkDirty = false; saveInk(); }
+                redrawCanvasSync();
+            } else if (activeTool === 'sentence') {
+                const sel = selectSentence();
+                if (sel) openSentenceSheet(sel); else { sentRects = []; redrawCanvasSync(); }
+            } else if (finalWordBoxes.length === 1) {
+                // ขีดโดนคำเดียว → พฤติกรรมเดิมทุกประการ: ป็อปอัปคำศัพท์ + บันทึกลงคลังคำศัพท์ได้
+                const finalWordBox = finalWordBoxes[0];
+                const normRect = { x: finalWordBox.x / currentScale, y: finalWordBox.y / currentScale, w: finalWordBox.w / currentScale, h: finalWordBox.h / currentScale };
+                handleWordHighlightedNonBlocking(finalWordBox.word, finalWordBox.context, normRect, e.clientX, e.clientY);
+            } else if (finalWordBoxes.length > 1) {
+                // ขีดโดนมากกว่า 1 คำรวดเดียว → แปลรวมตามบริบทประโยค (ใช้ช่องทางเดียวกับ "แปลประโยค" จึงไม่บันทึกลงคลังคำศัพท์)
+                openSentenceSheet(buildPhraseSelection(finalWordBoxes));
+            } else {
+                redrawCanvasSync();
+            }
+        }
+
+        // ---- ยางลบ (ลบทั้งเส้นที่ถูกแตะ) ----
+        function segDist(px, py, a, b) {
+            const dx = b[0] - a[0], dy = b[1] - a[1], l = dx * dx + dy * dy;
+            let t = l ? ((px - a[0]) * dx + (py - a[1]) * dy) / l : 0;
+            t = Math.max(0, Math.min(1, t));
+            return Math.hypot(px - a[0] - t * dx, py - a[1] - t * dy);
+        }
+        function eraseAt(p) {
+            const x = p.x / currentScale, y = p.y / currentScale, r = ERASER_R / currentScale, n = pageInk.length;
+            pageInk = pageInk.filter(st => !st.pts.some((q, i) => segDist(x, y, st.pts[i - 1] || q, q) <= r + st.w / 2));
+            if (pageInk.length !== n) inkDirty = true;
+        }
+        function saveInk() {
+            const rec = { pdfName: currentPdfName, page: currentPage, strokes: pageInk.slice() };
+            const op = rec.strokes.length ? db.ink.put(rec) : db.ink.delete([rec.pdfName, rec.page]);
+            op.catch(() => {});
+        }
+
+        // ---- แปลเป็นประโยค (ไม่บันทึกลงคลังคำศัพท์) ----
+        function splitSentences(t) {
+            const out = [], re = /[.!?]+["'”’)\]]*\s+(?=["'“‘(\[]?[A-Z0-9])/g;
+            let s0 = 0, m;
+            while ((m = re.exec(t))) {
+                const pre = t.slice(Math.max(0, m.index - 5), m.index);
+                if (m[0][0] === '.' && (/\b(?:Mr|Mrs|Ms|Dr|Prof|St|vs|etc|e\.g|i\.e|Fig|No|Inc|Ltd|Co)$/i.test(pre) || /\b[A-Z]$/.test(pre))) continue;
+                const e = m.index + m[0].length;
+                out.push({ s: s0, e, text: t.slice(s0, e).replace(/\s+/g, ' ').trim() });
+                s0 = e;
+            }
+            if (s0 < t.length) out.push({ s: s0, e: t.length, text: t.slice(s0).replace(/\s+/g, ' ').trim() });
+            return out;
+        }
+        function sidAt(i) {
+            const k = pageSentences.findIndex(r => i < r.e);
+            return k < 0 ? Math.max(0, pageSentences.length - 1) : k;
+        }
+        function accumulateHits() {
+            for (; procIdx < strokePoints.length; procIdx++) {
+                const p = strokePoints[procIdx];
+                for (const b of pageWordBoxes) {
+                    const py = b.h * 0.45;
+                    if (p.x >= b.x - 4 && p.x <= b.x + b.w + 4 && p.y >= b.y - py && p.y <= b.y + b.h + py) sentHits.add(b);
+                }
+            }
+        }
+        function lineRects(bs) {
+            const rows = [];
+            for (const b of [...bs].sort((a, c) => a.y - c.y || a.x - c.x)) {
+                const r = rows.find(q => Math.abs(q.y - b.y) < b.h * 0.6);
+                if (r) { r.x = Math.min(r.x, b.x); r.x2 = Math.max(r.x2, b.x + b.w); r.y2 = Math.max(r.y2, b.y + b.h); }
+                else rows.push({ x: b.x, y: b.y, x2: b.x + b.w, y2: b.y + b.h });
+            }
+            return rows.map(r => ({ x: r.x - 2, y: r.y - 2, w: r.x2 - r.x + 4, h: r.y2 - r.y + 4 }));
+        }
+        function selectSentence() {
+            if (!sentHits.size) return null;
+            const bs = [...sentHits];
+            if (pageSentences.length && bs.every(b => b.sid !== undefined)) {
+                const ids = bs.map(b => b.sid), lo = Math.min(...ids), hi = Math.min(Math.max(...ids), lo + 3);
+                return {
+                    text: pageSentences.slice(lo, hi + 1).map(q => q.text).join(' '),
+                    rects: lineRects(pageWordBoxes.filter(b => b.sid >= lo && b.sid <= hi)),
+                    before: (pageSentences[lo - 1] || {}).text || '',
+                    after: (pageSentences[hi + 1] || {}).text || ''
+                };
+            }
+            return { text: bs[0].context || bs[0].word, rects: lineRects(bs), before: '', after: '' };   // หน้า OCR: ใช้ข้อความรอบคำแทน
+        }
+
+        // ---- เลือก "กลุ่มคำ" (มากกว่า 1 คำ) จากการขีดในโหมดคำศัพท์ ----
+        // แปลเฉพาะกลุ่มคำที่ขีด (ไม่ขยายเป็นทั้งประโยคเหมือนโหมด "ประโยค") โดยอ่านบริบทรอบๆ เพื่อช่วยตีความ
+        // ส่งต่อให้ openSentenceSheet()/translateSentence() ชุดเดิม จึงไม่ถูกบันทึกลงคลังคำศัพท์โดยอัตโนมัติ
+        function buildPhraseSelection(boxes) {
+            const ordered = [...boxes].sort((a, b) => (Math.abs(a.y - b.y) < Math.min(a.h, b.h) * 0.6 ? a.x - b.x : a.y - b.y));
+            const phraseText = ordered.map(b => b.word).join(' ');
+            let sentenceText = ordered[0].context || phraseText;
+
+            if (pageSentences.length && ordered.every(b => b.sid !== undefined)) {
+                const ids = ordered.map(b => b.sid);
+                const lo = Math.min(...ids), hi = Math.max(...ids);
+                sentenceText = pageSentences.slice(lo, hi + 1).map(q => q.text).join(' ');
+            }
+
+            let before = '', after = '';
+            const firstWord = ordered[0].word, lastWord = ordered[ordered.length - 1].word;
+            const startIdx = sentenceText.toLowerCase().indexOf(firstWord.toLowerCase());
+            if (startIdx !== -1) {
+                before = sentenceText.slice(0, startIdx).trim();
+                let endIdx = sentenceText.toLowerCase().lastIndexOf(lastWord.toLowerCase());
+                endIdx = (endIdx !== -1 && endIdx >= startIdx) ? endIdx + lastWord.length : startIdx + phraseText.length;
+                after = sentenceText.slice(endIdx).trim();
+            }
+
+            return { text: phraseText, rects: lineRects(ordered), before, after };
+        }
+        async function translateSentence(sel) {
+            const key = sanitizeApiKey(localStorage.getItem('gemini_api_key'));
+            let err = '';
+            if (key) {
+                const prompt = `Translate the TARGET into natural, accurate Thai. Use CONTEXT only to resolve meaning; do not translate it.
+CONTEXT BEFORE: "${sel.before}"
+TARGET: "${sel.text}"
+CONTEXT AFTER: "${sel.after}"
+Return ONLY a raw JSON object: {"translation":"..."}`;
+                const r = await runGeminiJson(prompt, key, { each: 25000, total: 45000 });
+                if (r.translation) return { translation: r.translation, source: '✨ ' + r.modelUsed };
+                err = r.error || '';
+            } else err = 'ยังไม่ได้ตั้งค่า API Key';
+            try {
+                const res = await fetchWithTimeout('https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=th&dt=t&q=' + encodeURIComponent(sel.text), {}, 8000);
+                const j = await res.json();
+                const t = j[0].map(x => x[0]).join('');
+                if (t) return { translation: t, source: '⚡ Google Translate' + (err ? ` (Gemini: ${err.slice(0, 40)})` : '') };
+            } catch (e) {}
+            return { error: err || 'แปลไม่สำเร็จ' };
+        }
+        function openSentenceSheet(sel) {
+            sentSel = sel;
+            sentRects = sel.rects;
+            redrawCanvasSync();
+            document.getElementById('ss-en').textContent = sel.text;
+            document.getElementById('sentence-sheet').classList.remove('hidden');
+            runSentence();
+        }
+        async function runSentence() {
+            if (!sentSel) return;
+            const id = ++sentReq, th = document.getElementById('ss-th');
+            th.textContent = '⏳ กำลังแปล...';
+            document.getElementById('ss-src').textContent = '';
+            const r = await translateSentence(sentSel);
+            if (id !== sentReq) return;
+            th.textContent = r.translation || ('⚠️ ' + r.error);
+            document.getElementById('ss-src').textContent = r.source || '';
+        }
+        function closeSentenceSheet(silent) {
+            sentReq++;
+            sentSel = null;
+            sentRects = [];
+            document.getElementById('sentence-sheet').classList.add('hidden');
+            if (!silent) redrawCanvasSync();
+        }
+        function speakSentence() { if (sentSel) speakWord(sentSel.text); }
+        function copySentence() { try { navigator.clipboard.writeText(document.getElementById('ss-th').textContent); } catch (e) {} }
+
+        // ---- นำเข้าคำศัพท์จาก PDF (ลิสต์รูปแบบ "คำ - คำแปล" หรือตาราง) ----
+        const POS_RE = /^\(?(?:n|v|vi|vt|adj|adv|prep|conj|pron|det|int|phr|noun|verb|adjective|adverb|preposition|conjunction|pronoun)\.?(?:\s*[\/,&]\s*[a-z]+\.?)*\)?$/i;
+        const WORD_RE = /^[A-Za-z][A-Za-z'’\-]*(?:\s[A-Za-z'’\-]+){0,3}$/;
+        const THAI_RE = /[\u0E00-\u0E7F]/;
+        function parseVocabLine(cells) {
+            cells = cells.slice();
+            if (cells.length > 1 && /^\d{1,4}[.)]?$/.test(cells[0])) cells.shift();
+            if (cells.length === 1) {
+                const t = cells[0].replace(/^\s*(?:\d{1,4}[.)]\s+|[•●▪◦·*-]\s+)/, '');
+                const i = t.search(THAI_RE);
+                if (i > 0) {
+                    let left = t.slice(0, i).replace(/[\s:=–—\-→|,;]+$/, ''), pos = '';
+                    const m = left.match(/^(.*?)[\s(]+([A-Za-z]{1,12}\.?(?:\s*[\/,&]\s*[a-z]+\.?)*)\)?$/);
+                    if (m && POS_RE.test(m[2])) { left = m[1].trim(); pos = m[2].replace(/[()]/g, ''); }
+                    return WORD_RE.test(left) ? { word: left, pos, translation: t.slice(i).trim(), context: '' } : null;
+                }
+                if (i === -1) {
+                    const m = t.match(/^([A-Za-z][A-Za-z'’\-]*(?:\s[A-Za-z'’\-]+){0,3})\s+[:=–—-]\s+(.+)$/);
+                    if (m) return { word: m[1], pos: '', translation: '', context: m[2] };
+                    if (WORD_RE.test(t)) return { word: t, pos: '', translation: '', context: '' };
+                }
+                return null;
+            }
+            if (!WORD_RE.test(cells[0])) return null;
+            let pos = '', tr = [], ctx = [];
+            for (const c of cells.slice(1)) {
+                if (POS_RE.test(c)) pos = c.replace(/[()]/g, '');
+                else if (THAI_RE.test(c)) tr.push(c);
+                else ctx.push(c);
+            }
+            return { word: cells[0], pos, translation: tr.join(', '), context: ctx.join(' ') };
+        }
+        async function importVocabFromPdf(e) {
+            const f = e.target.files[0];
+            e.target.value = '';
+            if (!f) return;
+            try {
+                const doc = await pdfjsLib.getDocument({ data: await f.arrayBuffer() }).promise;
+                const lines = [];
+                for (let p = 1; p <= doc.numPages; p++) {
+                    const tc = await (await doc.getPage(p)).getTextContent(), rows = [];
+                    for (const it of tc.items) {
+                        if (!it.str.trim()) continue;
+                        const y = it.transform[5], h = Math.hypot(it.transform[2], it.transform[3]) || 10;
+                        let r = rows.find(q => Math.abs(q.y - y) < h * 0.5);
+                        if (!r) { r = { y, h, its: [] }; rows.push(r); }
+                        r.its.push({ x: it.transform[4], w: it.width, s: it.str });
+                    }
+                    rows.sort((a, b) => b.y - a.y).forEach(r => {
+                        r.its.sort((a, b) => a.x - b.x);
+                        const cells = []; let end = null;
+                        for (const t of r.its) {
+                            if (end !== null && t.x - end < r.h * 1.2) cells[cells.length - 1] += (t.x - end > r.h * 0.15 ? ' ' : '') + t.s;
+                            else cells.push(t.s);
+                            end = t.x + t.w;
+                        }
+                        lines.push(cells.map(c => c.trim()).filter(Boolean));
+                    });
+                }
+                const seen = new Set((await db.vocabs.toArray()).map(v => v.word.toLowerCase())), add = [];
+                for (const cells of lines) {
+                    const en = cells.length ? parseVocabLine(cells) : null;
+                    if (!en) continue;
+                    const k = en.word.toLowerCase();
+                    if (k.length < 2 || seen.has(k)) continue;
+                    seen.add(k);
+                    let tr = en.translation, pos = en.pos, ph = '';
+                    if (!tr) { const d = await lookupOfflineDict(en.word); if (d && d.t) { tr = d.t; pos = pos || d.pos || ''; ph = d.ph || ''; } }
+                    add.push({ word: en.word, context: en.context, translation: tr, pos, phonetics: ph, status: 'Learning', needsSync: !tr, page: 0, rect: null, timestamp: Date.now() + add.length, source: 'pdf-import', pdfName: null });
+                }
+                if (!add.length) return alert('ไม่พบคำศัพท์ใหม่ในไฟล์นี้ (อาจมีในคลังครบแล้ว หรือรูปแบบไม่ใช่ "คำ - คำแปล" / ตาราง)');
+                if (!confirm(`พบคำศัพท์ใหม่ ${add.length} คำ (เช่น ${add.slice(0, 5).map(a => a.word).join(', ')})\nนำเข้าคลังเลยไหม?`)) return;
+                await db.vocabs.bulkAdd(add);
+                await updateCounters();
+                await renderVocabTable();
+                const pend = add.filter(a => a.needsSync).length;
+                alert(`นำเข้า ${add.length} คำแล้ว` + (pend ? `\n${pend} คำยังไม่มีคำแปล กำลังแปลให้อัตโนมัติ...` : ''));
+                if (pend) syncOfflineVocabs(true);
+            } catch (err) {
+                alert('อ่านไฟล์ PDF ไม่สำเร็จ: ' + err.message);
+            }
+        }
+
+        // ---- ดาวน์โหลด PDF ที่มีไฮไลต์/ลายเส้น + ฝังข้อมูลไว้เชื่อมกลับระบบแปลเดิม ----
+        function loadPdfLib() {
+            if (window.PDFLib) return Promise.resolve(window.PDFLib);
+            return new Promise((ok, no) => {
+                const urls = ['https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js', 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js'];
+                let i = 0;
+                const next = () => {
+                    if (i >= urls.length) return no(new Error('โหลดไลบรารี pdf-lib ไม่ได้ (เช็คอินเทอร์เน็ต)'));
+                    const sc = document.createElement('script');
+                    sc.src = urls[i++];
+                    sc.onload = () => window.PDFLib ? ok(window.PDFLib) : next();
+                    sc.onerror = next;
+                    document.head.appendChild(sc);
+                };
+                next();
+            });
+        }
+        const r2 = n => Math.round(n * 100) / 100;
+        async function buildAnnotatedPdf(L, src, data) {
+            const { PDFDocument, PDFName, PDFDict, PDFArray, PDFString, PDFHexString } = L;
+            const doc = await PDFDocument.load(src, { ignoreEncryption: true });
+            const ctx = doc.context, pages = doc.getPages();
+            for (const pg of pages) {   // ลบของที่ VocabPen เคยใส่ไว้ (กันซ้ำเมื่อ export ซ้ำ)
+                const an = pg.node.Annots();
+                if (!an) continue;
+                for (let i = an.size() - 1; i >= 0; i--) {
+                    const d = an.lookupMaybe(i, PDFDict);
+                    const nm = d && d.lookupMaybe(PDFName.of('NM'), PDFString, PDFHexString);
+                    if (nm && nm.decodeText().startsWith('vocabpen-')) an.remove(i);
+                }
+            }
+            try {   // ลบไฟล์แนบเดิม
+                const names = doc.catalog.lookupMaybe(PDFName.of('Names'), PDFDict);
+                const ef = names && names.lookupMaybe(PDFName.of('EmbeddedFiles'), PDFDict);
+                const arr = ef && ef.lookupMaybe(PDFName.of('Names'), PDFArray);
+                if (arr) for (let i = arr.size() - 2; i >= 0; i -= 2) {
+                    const n = arr.lookupMaybe(i, PDFString, PDFHexString);
+                    if (n && n.decodeText() === 'vocabpen-data.json') { arr.remove(i + 1); arr.remove(i); }
+                }
+            } catch (e) {}
+            const addAnnot = (pageNo, rect, subtype, extra, content, res, nm) => {
+                const pg = pages[pageNo - 1];
+                if (!pg) return;
+                const ap = ctx.register(ctx.stream(content, { Type: 'XObject', Subtype: 'Form', BBox: rect, Resources: res }));
+                const an = ctx.register(ctx.obj(Object.assign({ Type: 'Annot', Subtype: subtype, Rect: rect, F: 4, NM: PDFHexString.fromText(nm), T: PDFHexString.fromText('VocabPen'), AP: { N: ap } }, extra)));
+                let arr = pg.node.Annots();
+                if (!arr) { arr = ctx.obj([]); pg.node.set(PDFName.of('Annots'), arr); }
+                arr.push(an);
+            };
+            data.highlights.forEach((h, n) => {
+                const [x1, y1, x2, y2] = h.rect.map(r2), c = h.mastered ? [0.06, 0.72, 0.5] : [1, 0.85, 0.2], a = h.mastered ? 0.3 : 0.45;
+                addAnnot(h.page, [x1, y1, x2, y2], 'Highlight',
+                    { QuadPoints: [x1, y2, x2, y2, x1, y1, x2, y1], C: c, CA: a, Contents: PDFHexString.fromText(h.note) },
+                    `/GS0 gs ${c.join(' ')} rg ${x1} ${y1} ${r2(x2 - x1)} ${r2(y2 - y1)} re f`,
+                    { ExtGState: { GS0: { Type: 'ExtGState', ca: a, CA: a, BM: 'Multiply' } } }, 'vocabpen-h' + n);
+            });
+            data.strokes.forEach((st, n) => {
+                const pts = st.pts.map(p => [r2(p[0]), r2(p[1])]);
+                if (!pts.length) return;
+                const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), w = st.w;
+                const rect = [Math.min(...xs) - w, Math.min(...ys) - w, Math.max(...xs) + w, Math.max(...ys) + w].map(r2);
+                const path = pts.map((p, i) => `${p[0]} ${p[1]} ${i ? 'l' : 'm'}`).join(' ') + (pts.length === 1 ? ` ${pts[0][0]} ${pts[0][1]} l` : '');
+                addAnnot(st.page, rect, 'Ink', { InkList: [pts.flat()], C: st.c, BS: { W: w } },
+                    `${st.c.join(' ')} RG ${w} w 1 J 1 j ${path} S`, {}, 'vocabpen-i' + n);
+            });
+            await doc.attach(new TextEncoder().encode(JSON.stringify(data.meta)), 'vocabpen-data.json', { mimeType: 'application/json', description: 'VocabPen vocabulary and ink data' });
+            return doc.save();
+        }
+        const hexRgb = h => [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16) / 255);
+        async function exportAnnotatedPdf() {
+            if (!pdfDoc) return alert('ยังไม่ได้เปิดไฟล์ PDF');
+            try {
+                const L = await loadPdfLib();
+                const saved = await db.pdfs.get(1);
+                if (!saved || !saved.blob) throw new Error('ไม่พบไฟล์ PDF ต้นฉบับในเครื่อง');
+                const vps = {};
+                const vp = async n => vps[n] || (vps[n] = (await pdfDoc.getPage(n)).getViewport({ scale: 1 }));
+                const vocabs = (await db.vocabs.toArray()).filter(v => v.rect && v.page && (!v.pdfName || v.pdfName === currentPdfName));
+                const inks = (await db.ink.toArray()).filter(r => r.pdfName === currentPdfName);
+                const highlights = [], strokes = [];
+                for (const v of vocabs) {
+                    const p = await vp(v.page), a = p.convertToPdfPoint(v.rect.x, v.rect.y), b = p.convertToPdfPoint(v.rect.x + v.rect.w, v.rect.y + v.rect.h);
+                    highlights.push({ page: v.page, rect: [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])], mastered: v.status === 'Mastered', note: `${v.word} = ${v.translation || ''}${v.pos ? ' (' + v.pos + ')' : ''}` });
+                }
+                for (const r of inks) for (const st of r.strokes) {
+                    const p = await vp(r.page);
+                    strokes.push({ page: r.page, c: hexRgb(st.c), w: st.w, pts: st.pts.map(q => p.convertToPdfPoint(q[0], q[1])) });
+                }
+                const meta = { app: 'VocabPen', version: 1, sourceName: currentPdfName, vocabs: vocabs.map(({ id, ...v }) => v), ink: inks.map(r => ({ page: r.page, strokes: r.strokes })) };
+                const bytes = await buildAnnotatedPdf(L, new Uint8Array(await saved.blob.arrayBuffer()), { highlights, strokes, meta });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+                a.download = currentPdfName.replace(/\.pdf$/i, '').replace(/_vocabpen$/, '') + '_vocabpen.pdf';
+                a.click();
+            } catch (err) {
+                alert('ดาวน์โหลดไม่สำเร็จ: ' + err.message);
+            }
+        }
+        // เปิดไฟล์ที่เคย export จาก VocabPen → ดึงคำศัพท์/ลายเส้นกลับมาเชื่อมกับระบบเดิม (ไม่ซ้ำของที่มีอยู่แล้ว)
+        async function restoreEmbeddedData() {
+            hideAnnots = false;
+            let att = null;
+            try { att = await pdfDoc.getAttachments(); } catch (e) {}
+            const f = att && att['vocabpen-data.json'];
+            if (!f) return;
+            let m;
+            try { m = JSON.parse(new TextDecoder().decode(f.content)); } catch (e) { return; }
+            if (!m || m.app !== 'VocabPen') return;
+            hideAnnots = true;   // ไฮไลต์/ลายเส้นในไฟล์ถูกวาดซ้ำโดยแอปเอง ไม่ต้องให้ pdf.js วาดซ้ำ
+            const name = m.sourceName || currentPdfName;
+            currentPdfName = name;
+            db.pdfs.update(1, { filename: name }).catch(() => {});
+            const key = v => `${String(v.word).toLowerCase()}|${v.page}|${Math.round(v.rect.x)}|${Math.round(v.rect.y)}`;
+            const have = new Set((await db.vocabs.toArray()).filter(v => v.rect && (!v.pdfName || v.pdfName === name)).map(key));
+            const fresh = (m.vocabs || []).filter(v => v.rect && !have.has(key(v))).map(v => ({ ...v, pdfName: name }));
+            if (fresh.length) await db.vocabs.bulkAdd(fresh);
+            for (const v of fresh) {
+                const w = String(v.word).toLowerCase();
+                if (v.translation && !(await db.customDict.get(w))) await db.customDict.put({ word: w, t: v.translation, pos: v.pos || 'Word', ph: v.phonetics || '' });
+            }
+            let inkAdded = 0;
+            for (const r of (m.ink || [])) {
+                const ex = await db.ink.get([name, r.page]), sig = q => `${q.c}|${q.pts.length}|${q.pts[0]}`;
+                const have2 = new Set(((ex && ex.strokes) || []).map(sig));
+                const add = r.strokes.filter(q => !have2.has(sig(q)));
+                if (add.length) { inkAdded += add.length; await db.ink.put({ pdfName: name, page: r.page, strokes: ((ex && ex.strokes) || []).concat(add) }); }
+            }
+            if (fresh.length || inkAdded) { await updateCounters(); alert(`เชื่อมข้อมูลจากไฟล์ที่เคย export แล้ว: คำศัพท์ ${fresh.length} คำ, ลายเส้น ${inkAdded} เส้น`); }
+        }
+        // <<VP-TOOLS-END>>
+
+        // ============================================================================
+        // 8. NON-BLOCKING INSTANT TRANSLATION
+        // ============================================================================
+        async function handleWordHighlightedNonBlocking(rawWord, context, normRect, clientX, clientY) {
+            const cleanWord = rawWord.trim();
+
+            let existing = await db.vocabs.where('word').equalsIgnoreCase(cleanWord).first();
+            if (existing && !existing.rect) {   // คำที่นำเข้าจากไฟล์ (ยังไม่มีตำแหน่ง) → ผูกกับตำแหน่งที่ขีดตอนนี้
+                const loc = { rect: normRect, page: currentPage, pdfName: currentPdfName, context: existing.context || context };
+                await db.vocabs.update(existing.id, loc);
+                Object.assign(existing, loc);
+                await loadPageHighlightsIntoRAM();
+            }
+            if (existing && existing.translation) {
+                showVocabPopup(existing, clientX, clientY, '⚡ มีในคลังแล้ว');
+                redrawCanvasSync();
+                return;
+            }
+
+            const offlineMatch = await lookupOfflineDict(cleanWord);
+
+            let vocabRecord = existing || {
+                word: cleanWord,
+                context: context,
+                translation: offlineMatch ? offlineMatch.t : '',
+                pos: offlineMatch ? offlineMatch.pos : '',
+                phonetics: offlineMatch ? offlineMatch.ph : '',
+                status: 'Learning',
+                needsSync: !offlineMatch,
+                page: currentPage,
+                rect: normRect,
+                pdfName: currentPdfName,
+                timestamp: Date.now()
+            };
+
+            if (!existing) {
+                const id = await db.vocabs.add(vocabRecord);
+                vocabRecord.id = id;
+            }
+
+            await loadPageHighlightsIntoRAM();
+            redrawCanvasSync();
+            updateCounters();
+
+            if (offlineMatch && offlineMatch.t) {
+                showVocabPopup(vocabRecord, clientX, clientY, '⚡ Offline Dict');
+                return;
+            }
+
+            showVocabPopup(vocabRecord, clientX, clientY, '⏳ กำลังหาคำแปล...');
+
+            translateOnlineWithFastTimeout(cleanWord, context).then(async (onlineRes) => {
+                if (onlineRes && onlineRes.translation) {
+                    await db.vocabs.update(vocabRecord.id, {
+                        translation: onlineRes.translation,
+                        pos: onlineRes.pos || 'Word',
+                        phonetics: onlineRes.phonetics || '',
+                        needsSync: false
+                    });
+                    await db.customDict.put({
+                        word: cleanWord.toLowerCase(),
+                        t: onlineRes.translation,
+                        pos: onlineRes.pos || 'Word',
+                        ph: onlineRes.phonetics || ''
+                    });
+                    await updateCounters();
+
+                    if (activePopupVocabId === vocabRecord.id) {
+                        document.getElementById('popup-translation-input').value = onlineRes.translation;
+                        document.getElementById('popup-pos-input').value = onlineRes.pos || 'Word';
+                        document.getElementById('popup-phonetics').textContent = onlineRes.phonetics || '';
+                        document.getElementById('popup-source-badge').textContent = onlineRes.source;
+                    }
+                } else if (activePopupVocabId === vocabRecord.id) {
+                    showTranslateFailure();
+                }
+            }).catch((err) => {
+                console.error('translate error', err);
+                if (activePopupVocabId === vocabRecord.id) {
+                    lastTranslateError = (err && err.message) || 'เกิดข้อผิดพลาด';
+                    showTranslateFailure();
+                }
+            });
+        }
+
+        function fetchWithTimeout(url, options = {}, timeoutMs = 1500) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            return fetch(url, { ...options, signal: controller.signal })
+                .finally(() => clearTimeout(timer));
+        }
+
+        // แสดงสาเหตุที่แปลไม่สำเร็จในป้ายของ popup (ข้อความเต็มดูได้จาก tooltip)
+        function showTranslateFailure() {
+            const badge = document.getElementById('popup-source-badge');
+            const msg = lastTranslateError || 'แปลไม่สำเร็จ';
+            badge.textContent = `⚠️ ${msg.length > 28 ? msg.slice(0, 28) + '…' : msg}`;
+            badge.title = `${msg}\n(กด ✨ ให้ AI แปลตามบริบท เพื่อลองใหม่)`;
+        }
+
+        async function translateOnlineWithFastTimeout(word, context) {
+            // ไม่เช็ค navigator.onLine เพราะบน Windows/Edge (VPN, adapter เสมือน) ค่านี้อาจเป็น false ทั้งที่ออนไลน์อยู่
+            lastTranslateError = '';
+            const apiKey = sanitizeApiKey(localStorage.getItem('gemini_api_key'));
+
+            // มี Gemini API Key → เรียก Gemini (โมเดลหลัก gemini-3.5-flash) ก่อน ถ้าไม่สำเร็จค่อยใช้ Google GTX
+            if (apiKey) {
+                const gem = await callGeminiSimpleCORS(word, context, apiKey);
+                if (gem && gem.translation) {
+                    return { ...gem, source: `✨ ${gem.modelUsed}` };
+                }
+                lastTranslateError = (gem && gem.error) || 'ไม่ทราบสาเหตุ';
+            } else {
+                lastTranslateError = 'ยังไม่ได้ตั้งค่า API Key';
+            }
+
+            try {
+                const gtxRes = await fetchWithTimeout(
+                    `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=th&dt=t&dt=bd&q=${encodeURIComponent(word)}`,
+                    {},
+                    1500
+                );
+                if (gtxRes.ok) {
+                    const gtxData = await gtxRes.json();
+                    const translation = gtxData?.[0]?.[0]?.[0] || '';
+                    let pos = gtxData?.[1]?.[0]?.[0] || 'Word';
+                    pos = pos.charAt(0).toUpperCase() + pos.slice(1);
+                    if (translation) {
+                        return { translation, pos, phonetics: '', source: '⚡ Fast Translate' };
+                    }
+                }
+            } catch (e) {}
+
+            return null;
+        }
+
+        // ============================================================================
+        // 9. GEMINI API ENGINE (gemini-3.5-flash เป็นโมเดลหลัก)
+        // ============================================================================
+        const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+        const PRIMARY_MODEL = 'gemini-3.5-flash';
+        // ใช้เฉพาะรุ่น Gemini 3.5 ขึ้นไป (ตัด 2.5 และรุ่นเก่ากว่าออกทั้งหมด) เรียงจากใหม่สุดไปหาเก่าสุดเพื่อไล่ลองเมื่อตัวหลักมีปัญหา
+        const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash'];
+        // เช็คว่าชื่อโมเดล (เช่น "gemini-3.6-flash") เป็นรุ่น 3.5 ขึ้นไปหรือไม่ ใช้กรองตอนค้นหาโมเดลสำรองแบบอัตโนมัติ
+        function isGeminiModelAtLeast35(name) {
+            const m = /^gemini-(\d+)(?:\.(\d+))?/.exec(name || '');
+            if (!m) return false;
+            const major = parseInt(m[1], 10);
+            const minor = m[2] ? parseInt(m[2], 10) : 0;
+            return major > 3 || (major === 3 && minor >= 5);
+        }
+        const geminiHeaders = (key) => ({
+            'Content-Type': 'application/json',
+            'x-goog-api-key': key
+        });
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        let geminiUseThinkingConfig = true;   // ถ้าโมเดลไม่รับ thinkingConfig จะปิดเองอัตโนมัติ
+        let lastTranslateError = '';
+
+        function getPreferredModel() {
+            return localStorage.getItem('gemini_preferred_model') || PRIMARY_MODEL;
+        }
+
+        // ลำดับที่ลอง: โมเดลที่เลือก → 3.5-flash → โมเดลสำรอง (ไม่เขียนทับค่าที่เลือกไว้)
+        function buildModelList() {
+            const preferred = getPreferredModel();
+            const order = (preferred && preferred !== 'auto')
+                ? [preferred, PRIMARY_MODEL, ...FALLBACK_MODELS]
+                : [PRIMARY_MODEL, ...FALLBACK_MODELS];
+            return [...new Set(order)];
+        }
+
+        function extractGeminiText(data) {
+            // รวมทุก part ที่เป็นข้อความ (เดิมอ่านเฉพาะ parts[0] จึงพลาดเป็นบางครั้ง) และข้าม part ที่เป็น "ความคิด"
+            const parts = data?.candidates?.[0]?.content?.parts || [];
+            return parts
+                .filter(p => p && !p.thought && typeof p.text === 'string')
+                .map(p => p.text)
+                .join('');
+        }
+
+        function parseTranslationJson(text) {
+            const cleaned = (text || '').replace(/```json|```/gi, '').trim();
+            const m = cleaned.match(/\{[\s\S]*\}/);
+            if (!m) return null;
+            try {
+                const obj = JSON.parse(m[0]);
+                const translation = String(obj.translation || '').trim();
+                if (!translation) return null;
+                return {
+                    translation,
+                    pos: String(obj.pos || '').trim(),
+                    phonetics: String(obj.phonetics || '').trim()
+                };
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function geminiGenerateOnce(model, key, prompt, timeoutMs) {
+            // ไม่ตั้ง temperature (Google แนะนำให้ใช้ค่าเริ่มต้นกับ Gemini 3.x)
+            // thinkingLevel: low → ตอบเร็วขึ้นมากสำหรับงานแปลคำเดียว (ค่าเริ่มต้นของ 3.5 Flash คือ medium)
+            const generationConfig = { responseMimeType: 'application/json' };
+            if (geminiUseThinkingConfig) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
+
+            const response = await fetchWithTimeout(`${GEMINI_BASE}/models/${model}:generateContent`, {
+                method: 'POST',
+                headers: geminiHeaders(key),
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig })
+            }, timeoutMs);
+
+            const raw = await response.text();
+            let data = {};
+            try { data = JSON.parse(raw); } catch (e) {}
+            return {
+                ok: response.ok,
+                status: response.status,
+                data,
+                message: data?.error?.message || `HTTP ${response.status} (${model})`
+            };
+        }
+
+        async function runGeminiJson(prompt, rawKey, opts = {}) {
+            const cleanKey = sanitizeApiKey(rawKey);
+            if (!cleanKey) return { error: 'ยังไม่ได้กรอก API Key' };
+
+            const models = buildModelList();
+
+            const deadline = Date.now() + (opts.total || 40000);   // เพดานเวลารวมต่อ 1 คำ ไม่ให้ popup ค้าง "กำลังหาคำแปล" นานเกินไป
+            let lastError = 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้';
+
+            for (const model of models) {
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    const remaining = deadline - Date.now();
+                    if (remaining < 2000) return { error: lastError };
+
+                    try {
+                        const r = await geminiGenerateOnce(model, cleanKey, prompt, Math.min(opts.each || 20000, remaining));
+
+                        if (!r.ok) {
+                            lastError = r.message;
+                            const low = r.message.toLowerCase();
+
+                            // key มีปัญหา / ไม่มีสิทธิ์ → หยุดทันที (ลองโมเดลอื่นก็ไม่ช่วย)
+                            if (low.includes('api key not valid') || low.includes('api_key_invalid') ||
+                                r.status === 401 || r.status === 403) {
+                                return { error: r.message };
+                            }
+                            // โมเดลไม่รับ thinkingConfig → ปิดแล้วลองโมเดลเดิมอีกครั้ง
+                            if (r.status === 400 && geminiUseThinkingConfig && /thinking/i.test(r.message)) {
+                                geminiUseThinkingConfig = false;
+                                attempt--;
+                                continue;
+                            }
+                            // โควตา/เซิร์ฟเวอร์ติดขัดชั่วคราว → รอสักครู่แล้วลองโมเดลเดิมซ้ำ 1 ครั้ง
+                            if ((r.status === 429 || r.status >= 500) && attempt === 0) {
+                                await sleep(1200);
+                                continue;
+                            }
+                            break;   // 404 หรือ error อื่น → ไปโมเดลถัดไป
+                        }
+
+                        const parsed = parseTranslationJson(extractGeminiText(r.data));
+                        if (parsed) return { ...parsed, modelUsed: model };
+
+                        const block = r.data?.promptFeedback?.blockReason;
+                        lastError = block
+                            ? `ถูกระบบความปลอดภัยบล็อก (${block})`
+                            : `AI ตอบกลับรูปแบบไม่ถูกต้อง (${model})`;
+                        if (block) break;
+                        // ไม่ได้ผลลัพธ์ที่อ่านได้ → ถามซ้ำอีก 1 ครั้ง
+                    } catch (err) {
+                        lastError = err.name === 'AbortError'
+                            ? 'หมดเวลารอการตอบกลับ (Timeout)'
+                            : (err.message || String(err));
+                        break;   // timeout / เครือข่ายล้ม → ไปโมเดลถัดไป
+                    }
+                }
+            }
+
+            // ทุกโมเดลล้มเพราะ "ไม่พบโมเดล" → ถามรายชื่อโมเดลจริงจาก Google แล้วลองตัวที่เหมาะสุดหนึ่งตัว
+            if (/not found|not supported|is not available/i.test(lastError) && deadline - Date.now() > 4000) {
+                try {
+                    const listResp = await fetchWithTimeout(`${GEMINI_BASE}/models`,
+                        { headers: { 'x-goog-api-key': cleanKey } }, 8000);
+                    if (listResp.ok) {
+                        const listData = await listResp.json();
+                        const available = (listData.models || [])
+                            .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+                            .map(m => m.name.replace(/^models\//, ''))
+                            .filter(n => n.startsWith('gemini') && !models.includes(n));
+                        const usable = available.filter(n => !/lite|image|live|tts|audio|embedding|preview/.test(n) && isGeminiModelAtLeast35(n));
+                        const best = usable.find(n => n.includes('3.5-flash')) ||
+                                     usable.find(n => n.includes('flash')) ||
+                                     usable[0] ||
+                                     null;
+                        if (best) {
+                            const r = await geminiGenerateOnce(best, cleanKey, prompt, 15000);
+                            if (r.ok) {
+                                const parsed = parseTranslationJson(extractGeminiText(r.data));
+                                if (parsed) return { ...parsed, modelUsed: best };
+                            }
+                            lastError = r.message || lastError;
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            return { error: lastError };
+        }
+
+        function callGeminiSimpleCORS(word, context, rawKey) {
+            const prompt = `Translate the English word "${word}" into Thai based on this context: "${context}".
+Return ONLY a raw JSON object: {"translation":"คำแปลภาษาไทยที่กระชับ","pos":"Noun/Verb/Adjective","phonetics":"/IPA/"}`;
+            return runGeminiJson(prompt, rawKey);
+        }
+
+        async function testAndDiscoverGemini() {
+            const cleanKey = sanitizeApiKey(document.getElementById('input-api-key').value);
+            document.getElementById('input-api-key').value = cleanKey;
+            const resEl = document.getElementById('api-test-result');
+            resEl.classList.remove('hidden');
+
+            if (!cleanKey) {
+                resEl.innerHTML = '⚠️ กรุณาวาง Gemini API Key (ขึ้นต้นด้วย <code>AQ.</code> หรือ <code>AIza</code>) ก่อนกดทดสอบ';
+                resEl.className = 'p-3 rounded-xl text-xs bg-amber-50 border-amber-200 text-amber-800';
+                return;
+            }
+
+            const wanted = getPreferredModel() === 'auto' ? PRIMARY_MODEL : getPreferredModel();
+            resEl.innerHTML = `⏳ กำลังเชื่อมต่อกับ <code>models/${escapeHtml(wanted)}</code>...`;
+            resEl.className = 'p-3 rounded-xl text-xs bg-indigo-50 border-indigo-200 text-indigo-700';
+
+            const testRes = await callGeminiSimpleCORS('Portfolio', 'Project Manager Portfolio', cleanKey);
+
+            if (testRes && testRes.translation) {
+                localStorage.setItem('gemini_api_key', cleanKey);
+                await refreshDictCountBadge();
+                const fallbackNote = testRes.modelUsed !== wanted
+                    ? `<br><span class="text-amber-700">⚠️ ตอนนี้ <code>${escapeHtml(wanted)}</code> ใช้ไม่ได้ จึงสลับไปใช้ <code>${escapeHtml(testRes.modelUsed)}</code> ชั่วคราว (ไม่เปลี่ยนค่าที่ตั้งไว้)</span>`
+                    : '';
+                resEl.innerHTML = `✅ <b>เชื่อมต่อ Gemini API สำเร็จ!</b><br>` +
+                    `• โมเดลที่ใช้งาน: <code>models/${escapeHtml(testRes.modelUsed)}</code><br>` +
+                    `• ทดสอบแปลคำว่า <b>Portfolio</b> = "${escapeHtml(testRes.translation)}" (${escapeHtml(testRes.pos || '-')})` +
+                    fallbackNote + `<br>` +
+                    `<span class="text-emerald-700">บันทึก API Key เรียบร้อยแล้ว!</span>`;
+                resEl.className = 'p-3 rounded-xl text-xs bg-emerald-50 border-emerald-300 text-emerald-900';
+            } else {
+                resEl.innerHTML = `❌ <b>เชื่อมต่อไม่สำเร็จ:</b> <code>${escapeHtml(String((testRes && testRes.error) || ''))}</code>`;
+                resEl.className = 'p-3 rounded-xl text-xs bg-rose-50 border-rose-300 text-rose-900';
+            }
+        }
+
+        // ============================================================================
+        // 10. LEXITRON DICTIONARY DOWNLOADER & OFFLINE LOOKUP
+        // ============================================================================
+        async function lookupOfflineDict(word) {
+            const lower = word.toLowerCase().trim();
+            const candidates = [
+                lower,
+                lower.replace(/s$/, ''),
+                lower.replace(/es$/, ''),
+                lower.replace(/ies$/, 'y'),
+                lower.replace(/ed$/, ''),
+                lower.replace(/d$/, ''),
+                lower.replace(/ied$/, 'y'),
+                lower.replace(/ing$/, ''),
+                lower.replace(/ing$/, 'e'),
+                lower.replace(/ly$/, '')
+            ];
+
+            for (const stem of [...new Set(candidates)]) {
+                if (stem.length < 2) continue;
+                if (BUILTIN_DICT[stem]) return BUILTIN_DICT[stem];
+                const custom = await db.customDict.get(stem);
+                if (custom) return custom;
+            }
+            return null;
+        }
+
+        async function downloadFullLexitronDictionary() {
+            const btn = document.getElementById('btn-download-lexitron');
+            const progBox = document.getElementById('dict-download-progress');
+            const progFill = document.getElementById('dict-progress-fill');
+            const progText = document.getElementById('dict-progress-status');
+
+            btn.disabled = true;
+            progBox.classList.remove('hidden');
+            progFill.style.width = '15%';
+            progText.textContent = 'กำลังดาวน์โหลดพจนานุกรม NECTEC LEXiTRON (CDN)...';
+
+            const urls = [
+                'https://cdn.jsdelivr.net/gh/brianbv/lexitron-data@master/etlex.utf-8',
+                'https://raw.githubusercontent.com/brianbv/lexitron-data/master/etlex.utf-8'
+            ];
+
+            try {
+                let rawXmlText = null;
+                for (const u of urls) {
+                    try {
+                        const resp = await fetch(u);
+                        if (resp.ok) {
+                            rawXmlText = await resp.text();
+                            break;
+                        }
+                    } catch (e) {}
+                }
+
+                if (!rawXmlText) {
+                    throw new Error('ไม่สามารถดาวน์โหลดได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต');
+                }
+
+                progFill.style.width = '50%';
+                progText.textContent = 'กำลังสกัดคำศัพท์มากกว่า 50,000 คำลงเครื่อง...';
+
+                const docRegex = /<Doc>([\s\S]*?)<\/Doc>/g;
+                const getTag = (block, tag) => {
+                    const m = block.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+                    return m ? m[1].trim() : '';
+                };
+
+                const posMap = {
+                    'N': 'Noun', 'V': 'Verb', 'VI': 'Verb', 'VT': 'Verb',
+                    'ADJ': 'Adjective', 'ADV': 'Adverb', 'PREP': 'Preposition',
+                    'CONJ': 'Conjunction', 'PRON': 'Pronoun', 'DET': 'Determiner'
+                };
+
+                const wordMap = new Map();
+                let match;
+                while ((match = docRegex.exec(rawXmlText)) !== null) {
+                    const block = match[1];
+                    const eng = getTag(block, 'eentry').toLowerCase();
+                    const thai = getTag(block, 'tentry');
+                    const rawCat = getTag(block, 'ecat').toUpperCase();
+                    if (!eng || !thai || eng.length < 2) continue;
+
+                    const cleanPos = posMap[rawCat] || rawCat || 'Word';
+                    if (wordMap.has(eng)) {
+                        const ex = wordMap.get(eng);
+                        const meanings = ex.t.split(', ');
+                        if (meanings.length < 3 && !meanings.includes(thai)) ex.t += `, ${thai}`;
+                    } else {
+                        wordMap.set(eng, { word: eng, t: thai, pos: cleanPos, ph: '' });
+                    }
+                }
+
+                const entries = Array.from(wordMap.values());
+                const chunkSize = 6000;
+                for (let i = 0; i < entries.length; i += chunkSize) {
+                    await db.customDict.bulkPut(entries.slice(i, i + chunkSize));
+                    progFill.style.width = `${50 + Math.round(((i + chunkSize) / entries.length) * 50)}%`;
+                }
+
+                progFill.style.width = '100%';
+                progText.textContent = `🎉 ติดตั้งสำเร็จ ${entries.length.toLocaleString()} คำ! ขีดแปลได้ทันทีใน 0.01 วินาที`;
+                await refreshDictCountBadge();
+                await syncOfflineVocabs(true);
+            } catch (err) {
+                progText.textContent = `❌ ${err.message}`;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function exportLocalDictAsJSON() {
+            const customItems = await db.customDict.toArray();
+            const exportObj = { ...BUILTIN_DICT };
+            for (const item of customItems) {
+                exportObj[item.word] = { t: item.t, pos: item.pos, ph: item.ph || '' };
+            }
+            const blob = new Blob([JSON.stringify(exportObj)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `eng_thai_dict_${Object.keys(exportObj).length}_words.json`;
+            a.click();
+        }
+
+        async function importCustomDict(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            try {
+                const data = JSON.parse(await file.text());
+                const entries = [];
+                if (Array.isArray(data)) {
+                    for (const item of data) {
+                        const w = (item.word || item.en || item.eentry || '').toLowerCase().trim();
+                        const t = item.t || item.translation || item.th || item.tentry || '';
+                        if (w && t) entries.push({ word: w, t: t, pos: item.pos || 'Word', ph: '' });
+                    }
+                } else {
+                    for (const [k, v] of Object.entries(data)) {
+                        entries.push({
+                            word: k.toLowerCase().trim(),
+                            t: typeof v === 'string' ? v : (v.t || v.translation || ''),
+                            pos: v.pos || 'Word',
+                            ph: v.ph || ''
+                        });
+                    }
+                }
+                await db.customDict.bulkPut(entries);
+                await refreshDictCountBadge();
+                alert(`นำเข้าพจนานุกรมสำเร็จ ${entries.length.toLocaleString()} คำ!`);
+            } catch (err) {
+                alert('ไฟล์ JSON ไม่ถูกต้อง');
+            }
+        }
+
+        // ============================================================================
+        // 11. PDF NAVIGATION, MANUAL OCR & UI HELPERS
+        // ============================================================================
+        function setInputMode(mode) {
+            inputMode = mode;
+            ['smart', 'draw', 'scroll'].forEach(m => {
+                const btn = document.getElementById(`mode-${m}`);
+                btn.className = m === mode
+                    ? 'px-2.5 py-1 rounded-lg bg-indigo-600 text-white shadow-sm transition'
+                    : 'px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition';
+            });
+            closePopup();
+        }
+
+        document.getElementById('file-upload').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            currentPdfName = file.name;
+            await db.pdfs.put({ id: 1, filename: file.name, blob: file, lastPage: 1, scale: currentScale });
+            await loadPdfFromBlob(file, 1);
+        });
+
+        async function loadPdfFromBlob(blob, startPage) {
+            document.getElementById('pdf-empty-state').classList.add('hidden');
+            document.getElementById('pdf-wrapper').classList.remove('hidden');
+
+            const arrayBuffer = await blob.arrayBuffer();
+            pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            await restoreEmbeddedData();
+            document.getElementById('page-count').textContent = pdfDoc.numPages;
+            currentPage = Math.min(Math.max(1, startPage), pdfDoc.numPages);
+            await renderCurrentPage();
+        }
+
+        let renderToken = 0;
+        let currentRenderTask = null;
+
+        async function renderCurrentPage() {
+            if (!pdfDoc) return;
+            closePopup();
+            closeSentenceSheet(true);
+
+            // กันเรนเดอร์ซ้อนกัน (เปลี่ยนหน้า/ซูมรัวๆ จะเกิด error "Cannot use the same canvas...")
+            const token = ++renderToken;
+            if (currentRenderTask) {
+                const oldTask = currentRenderTask;
+                currentRenderTask = null;
+                try { oldTask.cancel(); } catch (e) {}
+                try { await oldTask.promise; } catch (e) {}
+            }
+
+            const page = await pdfDoc.getPage(currentPage);
+            if (token !== renderToken) return;
+            const viewport = page.getViewport({ scale: currentScale });
+
+            pdfCanvas.width = viewport.width;
+            pdfCanvas.height = viewport.height;
+            drawCanvas.width = viewport.width;
+            drawCanvas.height = viewport.height;
+
+            const wrapper = document.getElementById('pdf-wrapper');
+            wrapper.style.width = `${viewport.width}px`;
+            wrapper.style.height = `${viewport.height}px`;
+
+            const renderTask = page.render(Object.assign({ canvasContext: pdfCtx, viewport },
+                (hideAnnots && pdfjsLib.AnnotationMode) ? { annotationMode: pdfjsLib.AnnotationMode.DISABLE } : {}));
+            currentRenderTask = renderTask;
+            try {
+                await renderTask.promise;
+            } catch (err) {
+                if (err && err.name === 'RenderingCancelledException') return;
+                throw err;
+            }
+            if (token !== renderToken) return;
+            currentRenderTask = null;
+            await extractDigitalWordBoxes(page, viewport);
+            if (token !== renderToken) return;
+
+            const statusBadge = document.getElementById('ocr-status-badge');
+            statusBadge.classList.remove('hidden');
+
+            if (pageWordBoxes.length === 0) {
+                const cached = await db.ocrCache.get([currentPdfName, currentPage]);
+                if (cached && cached.boxes && cached.boxes.length > 0) {
+                    pageWordBoxes = cached.boxes.map(b => ({
+                        word: b.word,
+                        x: b.nx * currentScale,
+                        y: b.ny * currentScale,
+                        w: b.nw * currentScale,
+                        h: b.nh * currentScale,
+                        context: b.context
+                    }));
+                    statusBadge.textContent = `✅ โหลดข้อมูล OCR แล้ว (${pageWordBoxes.length} คำ)`;
+                } else {
+                    statusBadge.textContent = `⚠️ ไฟล์ภาพสแกน (กดปุ่มสีส้ม "🔍 สแกน OCR หน้านี้" หากต้องการขีดคำ)`;
+                }
+            } else {
+                statusBadge.textContent = `✅ ล็อกพิกัดคำศัพท์พร้อมใช้ (${pageWordBoxes.length} คำ)`;
+            }
+
+            await loadPageHighlightsIntoRAM();
+            await loadPageInk();
+            redrawCanvasSync();
+
+            document.getElementById('page-input').value = currentPage;
+            document.getElementById('btn-prev').disabled = currentPage <= 1;
+            document.getElementById('btn-next').disabled = currentPage >= pdfDoc.numPages;
+            await db.pdfs.update(1, { lastPage: currentPage, scale: currentScale }).catch(() => {});
+        }
+
+        async function runPageOCR() {
+            if (!pdfDoc) return;
+            const banner = document.getElementById('ocr-progress-bar');
+            const progText = document.getElementById('ocr-progress-text');
+            const progPct = document.getElementById('ocr-progress-percent');
+            const btnOcr = document.getElementById('btn-ocr');
+
+            banner.classList.remove('hidden');
+            btnOcr.disabled = true;
+
+            try {
+                const result = await Tesseract.recognize(pdfCanvas, 'eng', {
+                    logger: m => {
+                        if (m.status === 'recognizing text') {
+                            progText.textContent = 'กำลังสแกนตัวหนังสือภาษาอังกฤษในหน้านี้ (OCR)...';
+                            progPct.textContent = `${Math.round((m.progress || 0) * 100)}%`;
+                        }
+                    }
+                });
+
+                const fullText = (result.data.text || '').replace(/\s+/g, ' ').trim();
+                const words = result.data.words || [];
+                const normalizedBoxes = [];
+
+                for (const w of words) {
+                    const clean = (w.text || '').replace(/[^A-Za-z'’-]/g, '');
+                    if (clean.length < 2) continue;
+                    const b = w.bbox;
+                    normalizedBoxes.push({
+                        word: clean,
+                        nx: b.x0 / currentScale,
+                        ny: b.y0 / currentScale,
+                        nw: (b.x1 - b.x0) / currentScale,
+                        nh: (b.y1 - b.y0) / currentScale,
+                        context: extractSentenceContext(fullText, clean)
+                    });
+                }
+
+                await db.ocrCache.put({ pdfName: currentPdfName, page: currentPage, boxes: normalizedBoxes });
+                pageWordBoxes = normalizedBoxes.map(b => ({
+                    word: b.word,
+                    x: b.nx * currentScale,
+                    y: b.ny * currentScale,
+                    w: b.nw * currentScale,
+                    h: b.nh * currentScale,
+                    context: b.context
+                }));
+
+                document.getElementById('ocr-status-badge').textContent = `✅ สแกน OCR สำเร็จ (${pageWordBoxes.length} คำ)`;
+            } catch (err) {
+                alert('ไม่สามารถสแกน OCR ได้ กรุณาตรวจสอบอินเทอร์เน็ต');
+            } finally {
+                banner.classList.add('hidden');
+                btnOcr.disabled = false;
+            }
+        }
+
+        function showVocabPopup(vocab, clientX, clientY, sourceLabel) {
+            activePopupVocabId = vocab.id;
+            const popup = document.getElementById('vocab-popup');
+            popup.classList.remove('hidden');
+
+            const popupWidth = 320;
+            const popupHeight = 230;
+            const left = Math.min(Math.max(16, (clientX || window.innerWidth / 2) - popupWidth / 2), window.innerWidth - popupWidth - 16);
+            const top = Math.max(70, (clientY || 300) - popupHeight - 20);
+
+            popup.style.left = `${left}px`;
+            popup.style.top = `${top}px`;
+
+            document.getElementById('popup-word').textContent = vocab.word;
+            document.getElementById('popup-phonetics').textContent = vocab.phonetics || '';
+            document.getElementById('popup-pos-input').value = vocab.pos || '';
+            document.getElementById('popup-translation-input').value = vocab.translation || '';
+            document.getElementById('popup-context').textContent = `"${vocab.context || ''}"`;
+            document.getElementById('popup-source-badge').textContent = sourceLabel;
+        }
+
+        function closePopup() {
+            document.getElementById('vocab-popup').classList.add('hidden');
+            activePopupVocabId = null;
+        }
+
+        async function askGeminiForPopupWord() {
+            if (!activePopupVocabId) return;
+            const vocab = await db.vocabs.get(activePopupVocabId);
+            if (!vocab) return;
+
+            const apiKey = sanitizeApiKey(localStorage.getItem('gemini_api_key'));
+            if (!apiKey) {
+                openSettingsModal();
+                return;
+            }
+
+            document.getElementById('popup-source-badge').textContent = '⏳ Gemini กำลังแปล...';
+            const res = await callGeminiSimpleCORS(vocab.word, vocab.context, apiKey);
+            if (res && res.translation) {
+                document.getElementById('popup-pos-input').value = res.pos || '';
+                document.getElementById('popup-translation-input').value = res.translation || '';
+                document.getElementById('popup-phonetics').textContent = res.phonetics || '';
+                document.getElementById('popup-source-badge').textContent = `✨ ${res.modelUsed || 'Gemini'}`;
+                await db.vocabs.update(activePopupVocabId, {
+                    translation: res.translation,
+                    pos: res.pos || vocab.pos,
+                    phonetics: res.phonetics || vocab.phonetics,
+                    needsSync: false
+                });
+                await updateCounters();
+            } else {
+                lastTranslateError = (res && res.error) || 'AI ไม่สำเร็จ';
+                showTranslateFailure();
+            }
+        }
+
+        async function savePopupEdits() {
+            if (!activePopupVocabId) return;
+            const newPos = document.getElementById('popup-pos-input').value.trim();
+            const newTrans = document.getElementById('popup-translation-input').value.trim();
+
+            await db.vocabs.update(activePopupVocabId, {
+                pos: newPos,
+                translation: newTrans,
+                needsSync: !newTrans
+            });
+            await updateCounters();
+            closePopup();
+        }
+
+        async function deleteCurrentPopupVocab() {
+            if (!activePopupVocabId) return;
+            await db.vocabs.delete(activePopupVocabId);
+            closePopup();
+            await loadPageHighlightsIntoRAM();
+            redrawCanvasSync();
+            await updateCounters();
+        }
+
+        async function syncOfflineVocabs(silent = false) {
+            const allVocabs = await db.vocabs.toArray();
+            const pendingList = allVocabs.filter(v => !v.translation || v.needsSync);
+
+            if (pendingList.length === 0) {
+                if (!silent) alert('คำศัพท์ทั้งหมดในคลังมีคำแปลครบถ้วนแล้ว!');
+                return;
+            }
+
+            const btn = document.getElementById('btn-sync-ai');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = `⏳ กำลังแปล (${pendingList.length} คำ)...`;
+            }
+
+            let successCount = 0;
+            let failStreak = 0;
+            for (const item of pendingList) {
+                let res = await lookupOfflineDict(item.word);
+                if (res && res.t) {
+                    await db.vocabs.update(item.id, {
+                        translation: res.t,
+                        pos: res.pos || 'Word',
+                        phonetics: res.ph || '',
+                        needsSync: false
+                    });
+                    successCount++;
+                    continue;
+                }
+                let online = null;
+                try { online = await translateOnlineWithFastTimeout(item.word, item.context || item.word); } catch (e) {}
+                if (online && online.translation) {
+                    await db.vocabs.update(item.id, {
+                        translation: online.translation,
+                        pos: online.pos || 'Word',
+                        phonetics: online.phonetics || '',
+                        needsSync: false
+                    });
+                    successCount++;
+                    failStreak = 0;
+                } else if (++failStreak >= 3) {
+                    break;   // ล้มติดกัน 3 คำ (โควตาเต็ม/ออฟไลน์) → หยุดแทนที่จะรัวคำขอต่อ
+                }
+                await sleep(250);   // เว้นจังหวะเล็กน้อย กันชนโควตาต่อนาที
+            }
+
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '⚡ แปลคำที่ค้างทั้งหมดทันที';
+            }
+
+            await updateCounters();
+            if (!document.getElementById('view-dashboard').classList.contains('hidden')) {
+                await renderVocabTable();
+            }
+            if (!silent) alert(`อัปเดตคำแปลสำเร็จแล้ว ${successCount} / ${pendingList.length} คำ!`);
+        }
+
+        async function openSettingsModal() {
+            document.getElementById('input-api-key').value = sanitizeApiKey(localStorage.getItem('gemini_api_key') || '');
+            const savedModel = localStorage.getItem('gemini_preferred_model') || 'gemini-3.5-flash';
+            const sel = document.getElementById('select-gemini-model');
+            if ([...sel.options].some(o => o.value === savedModel)) sel.value = savedModel;
+            document.getElementById('api-test-result').classList.add('hidden');
+            document.getElementById('modal-settings').classList.remove('hidden');
+            await refreshDictCountBadge();
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('modal-settings').classList.add('hidden');
+        }
+
+        function toggleShowKey() {
+            const inp = document.getElementById('input-api-key');
+            inp.type = inp.type === 'password' ? 'text' : 'password';
+        }
+
+        function saveApiKey() {
+            const key = sanitizeApiKey(document.getElementById('input-api-key').value);
+            localStorage.setItem('gemini_api_key', key);
+            localStorage.setItem('gemini_preferred_model', document.getElementById('select-gemini-model').value);
+            refreshDictCountBadge();
+            closeSettingsModal();
+        }
+
+        function speakWord(word) {
+            if (!word) return;
+            window.speechSynthesis.cancel();
+            const utter = new SpeechSynthesisUtterance(word);
+            utter.lang = 'en-US';
+            utter.rate = 0.92;
+            window.speechSynthesis.speak(utter);
+        }
+
+        function switchTab(tab) {
+            closePopup();
+            ['reader', 'dashboard', 'games'].forEach(t => {
+                document.getElementById(`view-${t}`).classList.toggle('hidden', t !== tab);
+                const btn = document.getElementById(`tab-${t}`);
+                btn.className = t === tab
+                    ? 'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-white text-indigo-600 shadow-sm transition flex items-center gap-1'
+                    : 'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 transition flex items-center gap-1';
+            });
+
+            document.getElementById('input-mode-wrapper').classList.toggle('hidden', tab !== 'reader');
+            if (tab === 'dashboard') renderVocabTable();
+            if (tab === 'games') initGames();
+        }
+
+        function changePage(delta) {
+            if (!pdfDoc) return;
+            const next = currentPage + delta;
+            if (next >= 1 && next <= pdfDoc.numPages) {
+                currentPage = next;
+                renderCurrentPage();
+            }
+        }
+
+        function jumpToPage(val) {
+            if (!pdfDoc) return;
+            const num = parseInt(val, 10);
+            if (num >= 1 && num <= pdfDoc.numPages) {
+                currentPage = num;
+                renderCurrentPage();
+            }
+        }
+
+        function changeZoom(delta) {
+            if (!pdfDoc) return;
+            currentScale = Math.min(3.0, Math.max(0.75, +(currentScale + delta).toFixed(2)));
+            document.getElementById('zoom-level').textContent = `${Math.round(currentScale * 100)}%`;
+            renderCurrentPage();
+        }
+
+        async function updateCounters() {
+            const all = await db.vocabs.toArray();
+            const total = all.length;
+            const learning = all.filter(v => v.status === 'Learning').length;
+            const mastered = all.filter(v => v.status === 'Mastered').length;
+            const pending = all.filter(v => !v.translation || v.needsSync).length;
+
+            document.getElementById('nav-badge-total').textContent = total;
+            document.getElementById('nav-badge-learning').textContent = learning;
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-learning').textContent = learning;
+            document.getElementById('stat-mastered').textContent = mastered;
+            document.getElementById('stat-pending').textContent = pending;
+        }
+
+        async function renderVocabTable() {
+            await updateCounters();
+            const search = document.getElementById('search-vocab').value.trim().toLowerCase();
+            const filter = document.getElementById('filter-status').value;
+
+            let list = await db.vocabs.reverse().sortBy('timestamp');
+
+            list = list.filter(v => {
+                const matchSearch = !search ||
+                    v.word.toLowerCase().includes(search) ||
+                    (v.translation && v.translation.toLowerCase().includes(search));
+                if (!matchSearch) return false;
+                if (filter === 'Learning') return v.status === 'Learning';
+                if (filter === 'Mastered') return v.status === 'Mastered';
+                if (filter === 'Pending') return !v.translation || v.needsSync;
+                return true;
+            });
+
+            const tbody = document.getElementById('vocab-table-body');
+            if (list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400">ยังไม่มีรายการคำศัพท์ในหมวดหมู่นี้</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = list.map(v => `
+                <tr class="hover:bg-slate-50 transition">
+                    <td class="p-4">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-base text-slate-800">${escapeHtml(v.word)}</span>
+                            <button onclick="speakWord('${escapeQuotes(v.word)}')" class="text-slate-400 hover:text-indigo-600">🔊</button>
+                        </div>
+                        <span class="text-xs text-slate-400">${escapeHtml(v.phonetics || '')}</span>
+                    </td>
+                    <td class="p-4">
+                        <span class="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-semibold">${escapeHtml(v.pos || '-')}</span>
+                    </td>
+                    <td class="p-4 font-bold text-slate-800">
+                        ${v.translation ? escapeHtml(v.translation) : `<button onclick="syncSingleVocab(${v.id})" class="text-indigo-600 underline text-xs font-semibold">⚡ กดแปลทันที</button>`}
+                    </td>
+                    <td class="p-4 text-xs text-slate-500 italic max-w-xs truncate" title="${escapeHtml(v.context || '')}">
+                        "${escapeHtml(v.context || '')}"
+                    </td>
+                    <td class="p-4">
+                        <button onclick="toggleVocabStatus(${v.id}, '${v.status}')" class="px-3 py-1 rounded-full text-xs font-semibold ${v.status === 'Mastered' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">
+                            ${v.status === 'Mastered' ? '✅ จำได้แล้ว' : '⏳ กำลังท่อง'}
+                        </button>
+                    </td>
+                    <td class="p-4 text-right">
+                        <button onclick="deleteVocabItem(${v.id})" class="text-rose-500 hover:text-rose-700 text-xs font-medium">ลบ</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function syncSingleVocab(id) {
+            const item = await db.vocabs.get(id);
+            if (!item) return;
+            const offline = await lookupOfflineDict(item.word);
+            if (offline && offline.t) {
+                await db.vocabs.update(id, { translation: offline.t, pos: offline.pos || 'Word', needsSync: false });
+                return renderVocabTable();
+            }
+            const online = await translateOnlineWithFastTimeout(item.word, item.context || item.word);
+            if (online && online.translation) {
+                await db.vocabs.update(id, { translation: online.translation, pos: online.pos || 'Word', needsSync: false });
+                await renderVocabTable();
+            } else {
+                alert(`แปลไม่สำเร็จ: ${lastTranslateError || 'ไม่ทราบสาเหตุ'}`);
+            }
+        }
+
+        async function toggleVocabStatus(id, currentStatus) {
+            const nextStatus = currentStatus === 'Mastered' ? 'Learning' : 'Mastered';
+            await db.vocabs.update(id, { status: nextStatus });
+            await loadPageHighlightsIntoRAM();
+            redrawCanvasSync();
+            renderVocabTable();
+        }
+
+        async function deleteVocabItem(id) {
+            await db.vocabs.delete(id);
+            await loadPageHighlightsIntoRAM();
+            redrawCanvasSync();
+            renderVocabTable();
+        }
+
+        let activeGameMode = 'flashcard';
+
+        async function initGames() {
+            const allLearning = await db.vocabs.where('status').equals('Learning').toArray();
+            learningList = shuffleArray(allLearning);
+            document.getElementById('game-remaining-count').textContent = learningList.length;
+
+            const isEmpty = learningList.length === 0;
+            document.getElementById('game-empty-state').classList.toggle('hidden', !isEmpty);
+            document.getElementById('game-flashcard-container').classList.toggle('hidden', isEmpty || activeGameMode !== 'flashcard');
+            document.getElementById('game-quiz-container').classList.toggle('hidden', isEmpty || activeGameMode !== 'quiz');
+
+            if (!isEmpty) {
+                fcIndex = 0;
+                if (activeGameMode === 'flashcard') renderFlashcard();
+                else renderQuizQuestion();
+            }
+        }
+
+        function switchGameMode(mode) {
+            activeGameMode = mode;
+            document.getElementById('btn-mode-flashcard').className = mode === 'flashcard'
+                ? 'px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white transition'
+                : 'px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:text-slate-900 transition';
+            document.getElementById('btn-mode-quiz').className = mode === 'quiz'
+                ? 'px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white transition'
+                : 'px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:text-slate-900 transition';
+            initGames();
+        }
+
+        function renderFlashcard() {
+            if (learningList.length === 0) return initGames();
+            const card = learningList[fcIndex % learningList.length];
+            document.getElementById('flashcard-inner').classList.remove('rotate-y-180');
+            document.getElementById('fc-word').textContent = card.word;
+            document.getElementById('fc-phonetics').textContent = card.phonetics || '';
+            document.getElementById('fc-context').textContent = `"${card.context || ''}"`;
+            document.getElementById('fc-pos').textContent = card.pos || 'Vocabulary';
+            document.getElementById('fc-translation').textContent = card.translation || '(กดปุ่มแปลที่หน้าคลังคำศัพท์)';
+            document.getElementById('fc-context-back').textContent = `"${card.context || ''}"`;
+        }
+
+        function flipFlashcard() {
+            document.getElementById('flashcard-inner').classList.toggle('rotate-y-180');
+        }
+
+        async function handleFlashcardResult(mastered) {
+            if (learningList.length === 0) return;
+            const currentCard = learningList[fcIndex % learningList.length];
+            if (mastered) {
+                await db.vocabs.update(currentCard.id, { status: 'Mastered' });
+                await loadPageHighlightsIntoRAM();
+                await updateCounters();
+                await initGames();
+            } else {
+                fcIndex = (fcIndex + 1) % learningList.length;
+                renderFlashcard();
+            }
+        }
+
+        async function renderQuizQuestion() {
+            if (learningList.length === 0) return initGames();
+            document.getElementById('quiz-feedback').classList.add('hidden');
+
+            currentQuizVocab = learningList[Math.floor(Math.random() * learningList.length)];
+            document.getElementById('quiz-word').textContent = currentQuizVocab.word;
+            document.getElementById('quiz-pos').textContent = currentQuizVocab.pos || '';
+            document.getElementById('quiz-context').textContent = `"${currentQuizVocab.context || ''}"`;
+
+            const correctAns = currentQuizVocab.translation || 'ผู้จัดการ/โครงการ';
+            const allVocabs = await db.vocabs.toArray();
+            let pool = allVocabs.map(v => v.translation).filter(t => t && t !== correctAns);
+
+            if (pool.length < 3) {
+                const fallbackPool = Object.values(BUILTIN_DICT).map(d => d.t).filter(t => t !== correctAns);
+                pool = [...new Set([...pool, ...fallbackPool])];
+            }
+
+            const distractors = shuffleArray(pool).slice(0, 3);
+            const choices = shuffleArray([correctAns, ...distractors]);
+
+            document.getElementById('quiz-options').innerHTML = choices.map(choice => `
+                <button onclick="checkQuizAnswer(this, '${escapeQuotes(choice)}', '${escapeQuotes(correctAns)}')"
+                    class="quiz-choice-btn p-4 rounded-2xl border-2 border-slate-200 hover:border-indigo-400 text-left font-semibold text-slate-700 transition">
+                    ${escapeHtml(choice)}
+                </button>
+            `).join('');
+        }
+
+        function checkQuizAnswer(btn, selected, correct) {
+            document.querySelectorAll('.quiz-choice-btn').forEach(b => b.disabled = true);
+            const feedbackBox = document.getElementById('quiz-feedback');
+            const feedbackText = document.getElementById('quiz-feedback-text');
+            const masterBtn = document.getElementById('btn-quiz-master');
+            feedbackBox.classList.remove('hidden');
+
+            if (selected === correct) {
+                btn.className = 'quiz-choice-btn p-4 rounded-2xl border-2 border-emerald-500 bg-emerald-50 text-left font-bold text-emerald-800';
+                feedbackText.textContent = '🎉 ถูกต้อง! จำคำนี้ได้แม่นหรือยัง?';
+                feedbackText.className = 'font-bold text-base text-emerald-600';
+                masterBtn.classList.remove('hidden');
+            } else {
+                btn.className = 'quiz-choice-btn p-4 rounded-2xl border-2 border-rose-500 bg-rose-50 text-left font-bold text-rose-800';
+                feedbackText.textContent = `❌ คำตอบที่ถูกคือ: "${correct}"`;
+                feedbackText.className = 'font-bold text-base text-rose-600';
+                masterBtn.classList.add('hidden');
+            }
+        }
+
+        function nextQuizQuestion() { renderQuizQuestion(); }
+
+        async function markQuizWordMastered() {
+            if (!currentQuizVocab) return;
+            await db.vocabs.update(currentQuizVocab.id, { status: 'Mastered' });
+            await loadPageHighlightsIntoRAM();
+            await updateCounters();
+            await initGames();
+        }
+
+        async function exportPrintablePDF() {
+            const list = await db.vocabs.toArray();
+            if (list.length === 0) return alert('ยังไม่มีคำศัพท์ในคลัง');
+            document.getElementById('print-subtitle').textContent =
+                `สร้างเมื่อ ${new Date().toLocaleDateString('th-TH')} | รวมทั้งหมด ${list.length} คำ`;
+            document.getElementById('print-table-body').innerHTML = list.map((v, i) => `
+                <tr>
+                    <td class="border border-gray-400 p-2">${i + 1}</td>
+                    <td class="border border-gray-400 p-2 font-bold">${escapeHtml(v.word)}</td>
+                    <td class="border border-gray-400 p-2">${escapeHtml(v.pos || '-')}</td>
+                    <td class="border border-gray-400 p-2">${escapeHtml(v.phonetics || '-')}</td>
+                    <td class="border border-gray-400 p-2">${escapeHtml(v.translation || '-')}</td>
+                    <td class="border border-gray-400 p-2 text-xs italic">${escapeHtml(v.context || '-')}</td>
+                </tr>
+            `).join('');
+            const printArea = document.getElementById('print-area');
+            printArea.classList.remove('hidden');
+            window.print();
+            printArea.classList.add('hidden');
+        }
+
+        async function exportBackupJSON() {
+            const list = await db.vocabs.toArray();
+            const blob = new Blob([JSON.stringify(list, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `vocab_backup_${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+        }
+
+        async function importBackupJSON(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            try {
+                const items = JSON.parse(await file.text());
+                if (Array.isArray(items)) {
+                    await db.vocabs.bulkPut(items);
+                    await syncOfflineVocabs(true);
+                    await renderVocabTable();
+                    alert(`นำเข้าและแปลคำศัพท์สำเร็จ ${items.length} คำ!`);
+                }
+            } catch (err) {
+                alert('ไฟล์ JSON ไม่ถูกต้อง');
+            }
+        }
+
+        function shuffleArray(arr) {
+            const copy = [...arr];
+            for (let i = copy.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [copy[i], copy[j]] = [copy[j], copy[i]];
+            }
+            return copy;
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function escapeQuotes(str) {
+            return String(str)
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'")
+                .replace(/[\r\n]+/g, ' ')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;');
+        }
+    </script>
+</body>
+</html>
